@@ -36,4 +36,8 @@
 - Extended processing models and Room attempt persistence with response code and response message fields.
 - Updated the foreground service to execute real webhook dispatches and persist final `SUCCESS` or `FAILED` outcomes.
 - Extended the Compose workbench with monitoring controls and a recent-history card backed by persisted SMS processing records.
-- Ran the full `testDebugUnitTest` suite successfully after the webhook and history changes.
+- Added `RetryFailedAttemptUseCase` and unit tests for successful and failed single-channel retry semantics.
+- Extended Room queries and repositories to surface only the latest retryable failed attempts and to append retry attempts while recomputing record-level status from all latest channel results.
+- Added a foreground-service retry action so the app can re-dispatch a single failed channel attempt by id.
+- Added a failed retry queue card to the Compose workbench so users can inspect retryable failures and trigger manual retry.
+- Ran the full `testDebugUnitTest` suite successfully after the retry queue and retry execution changes.

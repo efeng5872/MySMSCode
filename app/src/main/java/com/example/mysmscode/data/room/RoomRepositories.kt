@@ -3,7 +3,10 @@ package com.example.mysmscode.data
 import androidx.room.withTransaction
 import com.example.mysmscode.domain.ForwardAttemptDraft
 import com.example.mysmscode.domain.ProcessingOutcomeDraft
+import com.example.mysmscode.domain.RetryExecution
+import com.example.mysmscode.domain.RetryableAttempt
 import com.example.mysmscode.domain.RobotEndpoint
+import com.example.mysmscode.domain.RobotType
 import com.example.mysmscode.domain.SenderRule
 import com.example.mysmscode.domain.SmsRecordDraft
 import com.example.mysmscode.domain.SmsRecordPreview
@@ -66,6 +69,20 @@ class RoomProcessingRepository(
         }
     }
 
+    suspend fun saveRetryExecution(failedAttempt: RetryableAttempt, execution: RetryExecution) {
+        database.withTransaction {
+            processingDao.insertAttempt(execution.nextAttempt.toEntity(failedAttempt.smsRecordId))
+            val latestAttempts = processingDao.getLatestAttemptsForRecord(failedAttempt.smsRecordId)
+            val failedLatestAttempts = latestAttempts.filter { it.status == "FAILED" }
+            val finalStatus = if (failedLatestAttempts.isEmpty()) "SUCCESS" else "FAILED"
+            val failureReason = failedLatestAttempts
+                .mapNotNull { attempt -> attempt.responseMessage?.takeIf { message -> message.isNotBlank() }?.let { "${attempt.channel}: $it" } }
+                .joinToString(separator = "; ")
+                .ifBlank { null }
+            processingDao.updateRecordStatus(failedAttempt.smsRecordId, finalStatus, failureReason)
+        }
+    }
+
     suspend fun countRecords(): Int = processingDao.countRecords()
 
     suspend fun getRecentRecords(limit: Int = 5): List<SmsRecordPreview> {
@@ -78,6 +95,14 @@ class RoomProcessingRepository(
                 receivedAt = entity.receivedAt,
             )
         }
+    }
+
+    suspend fun getRetryableFailedAttempts(limit: Int = 20): List<RetryableAttempt> {
+        return processingDao.getRetryableFailedAttempts(limit).map(RetryableAttemptRow::toDomain)
+    }
+
+    suspend fun getRetryableAttemptById(attemptId: Long): RetryableAttempt? {
+        return processingDao.getRetryableAttemptById(attemptId)?.toDomain()
     }
 }
 
@@ -102,5 +127,20 @@ private fun ForwardAttemptDraft.toEntity(recordId: Long): ForwardAttemptEntity =
     responseMessage = responseMessage,
     attemptedAt = System.currentTimeMillis(),
     nextRetryAt = null,
+    recoverable = recoverable,
+)
+
+private fun RetryableAttemptRow.toDomain(): RetryableAttempt = RetryableAttempt(
+    attemptId = attemptId,
+    smsRecordId = smsRecordId,
+    senderNumber = senderNumber,
+    messageBody = messageBody,
+    matchedKeyword = matchedKeyword,
+    receivedAt = receivedAt,
+    robotId = robotId,
+    robotName = robotName,
+    robotType = RobotType.valueOf(robotType),
+    attemptNumber = attemptNumber,
+    lastErrorMessage = lastErrorMessage,
     recoverable = recoverable,
 )

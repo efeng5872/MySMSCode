@@ -92,11 +92,31 @@ data class ForwardDispatchResult(
     val recoverable: Boolean,
 )
 
+data class RetryableAttempt(
+    val attemptId: Long,
+    val smsRecordId: Long,
+    val senderNumber: String,
+    val messageBody: String,
+    val matchedKeyword: String?,
+    val receivedAt: Long,
+    val robotId: Long,
+    val robotName: String,
+    val robotType: RobotType,
+    val attemptNumber: Int,
+    val lastErrorMessage: String?,
+    val recoverable: Boolean,
+)
+
+data class RetryExecution(
+    val recordStatus: SmsRecordStatus,
+    val recordFailureReason: String?,
+    val nextAttempt: ForwardAttemptDraft,
+)
+
 data class ProcessingOutcomeDraft(
     val record: SmsRecordDraft,
     val attempts: List<ForwardAttemptDraft>,
 )
-
 
 sealed interface SmsProcessingResult {
     data object Ignored : SmsProcessingResult

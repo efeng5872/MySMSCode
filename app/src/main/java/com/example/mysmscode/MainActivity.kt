@@ -10,7 +10,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
@@ -44,6 +43,7 @@ import androidx.compose.ui.unit.dp
 import com.example.mysmscode.data.RepositorySaveResult
 import com.example.mysmscode.domain.BuildConfigurationSummaryUseCase
 import com.example.mysmscode.domain.ConfigurationRuleSummary
+import com.example.mysmscode.domain.RetryableAttempt
 import com.example.mysmscode.domain.RobotEndpoint
 import com.example.mysmscode.domain.RobotType
 import com.example.mysmscode.domain.SenderRule
@@ -74,6 +74,7 @@ private fun ConfigurationWorkbench(container: AppContainer) {
     var robots by remember { mutableStateOf(emptyList<RobotEndpoint>()) }
     var rules by remember { mutableStateOf(emptyList<SenderRule>()) }
     var recentRecords by remember { mutableStateOf(emptyList<SmsRecordPreview>()) }
+    var failedAttempts by remember { mutableStateOf(emptyList<RetryableAttempt>()) }
     var isLoading by remember { mutableStateOf(true) }
     var statusMessage by remember { mutableStateOf("Room-backed configuration workbench ready.") }
 
@@ -92,9 +93,11 @@ private fun ConfigurationWorkbench(container: AppContainer) {
         val reloadedRobots = withContext(Dispatchers.IO) { container.robotRepository.getAll() }
         val reloadedRules = withContext(Dispatchers.IO) { container.senderRuleRepository.getAll() }
         val reloadedRecentRecords = withContext(Dispatchers.IO) { container.processingRepository.getRecentRecords(limit = 10) }
+        val reloadedFailedAttempts = withContext(Dispatchers.IO) { container.processingRepository.getRetryableFailedAttempts(limit = 20) }
         robots = reloadedRobots
         rules = reloadedRules
         recentRecords = reloadedRecentRecords
+        failedAttempts = reloadedFailedAttempts
         isLoading = false
     }
 
@@ -131,6 +134,7 @@ private fun ConfigurationWorkbench(container: AppContainer) {
                 robotCount = robots.size,
                 ruleCount = rules.size,
                 recentRecordCount = recentRecords.size,
+                failedRetryCount = failedAttempts.size,
                 onStartMonitoring = {
                     MonitoringForegroundService.startMonitoring(context)
                     statusMessage = "Monitoring service start requested."
@@ -240,6 +244,13 @@ private fun ConfigurationWorkbench(container: AppContainer) {
                 }
             )
             ConfigurationSummaryCard(robots = robots, summaries = summaries)
+            FailedRetryCard(
+                attempts = failedAttempts,
+                onRetry = { attemptId ->
+                    MonitoringForegroundService.retryFailedAttempt(context, attemptId)
+                    statusMessage = "Retry requested for failed attempt #$attemptId."
+                },
+            )
             RecentHistoryCard(records = recentRecords)
         }
     }
@@ -251,6 +262,7 @@ private fun StatusCard(
     robotCount: Int,
     ruleCount: Int,
     recentRecordCount: Int,
+    failedRetryCount: Int,
     onStartMonitoring: () -> Unit,
     onRefresh: () -> Unit,
 ) {
@@ -267,6 +279,7 @@ private fun StatusCard(
                 Text("Configured robots: $robotCount")
                 Text("Configured sender rules: $ruleCount")
                 Text("Recent processed records: $recentRecordCount")
+                Text("Retryable failed attempts: $failedRetryCount")
             }
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Button(onClick = onStartMonitoring) {
@@ -441,6 +454,44 @@ private fun ConfigurationSummaryCard(
                         Text("Keywords: ${summary.keywordPreview}")
                         Text("Robots: ${summary.robotNames.joinToString()}")
                         Text(if (summary.enabled) "Rule enabled" else "Rule disabled", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        HorizontalDivider(modifier = Modifier.padding(top = 8.dp))
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun FailedRetryCard(
+    attempts: List<RetryableAttempt>,
+    onRetry: (Long) -> Unit,
+) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text("Failed Retry Queue", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            if (attempts.isEmpty()) {
+                Text("No retryable failed attempts right now.")
+            } else {
+                attempts.forEachIndexed { index, attempt ->
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text(attempt.senderNumber, fontWeight = FontWeight.SemiBold)
+                        Text(attempt.messageBody, style = MaterialTheme.typography.bodyMedium)
+                        Text(
+                            text = "Robot: ${attempt.robotName} (${attempt.robotType.name}) | Attempt: ${attempt.attemptNumber}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Text(
+                            text = "Last error: ${attempt.lastErrorMessage.orEmpty()}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                        Button(onClick = { onRetry(attempt.attemptId) }) {
+                            Text("Retry This Channel")
+                        }
+                    }
+                    if (index != attempts.lastIndex) {
                         HorizontalDivider(modifier = Modifier.padding(top = 8.dp))
                     }
                 }

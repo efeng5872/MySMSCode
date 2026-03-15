@@ -65,3 +65,29 @@ data class ForwardAttemptEntity(
     val nextRetryAt: Long? = null,
     val recoverable: Boolean,
 )
+
+data class RetryableAttemptRow(
+    @ColumnInfo(name = "attempt_id")
+    val attemptId: Long,
+    @ColumnInfo(name = "sms_record_id")
+    val smsRecordId: Long,
+    @ColumnInfo(name = "sender_number")
+    val senderNumber: String,
+    @ColumnInfo(name = "message_body")
+    val messageBody: String,
+    @ColumnInfo(name = "matched_keyword")
+    val matchedKeyword: String?,
+    @ColumnInfo(name = "received_at")
+    val receivedAt: Long,
+    @ColumnInfo(name = "robot_endpoint_id")
+    val robotId: Long,
+    @ColumnInfo(name = "robot_name")
+    val robotName: String,
+    @ColumnInfo(name = "robot_type")
+    val robotType: String,
+    @ColumnInfo(name = "attempt_number")
+    val attemptNumber: Int,
+    @ColumnInfo(name = "response_message")
+    val lastErrorMessage: String?,
+    val recoverable: Boolean,
+)

@@ -10,8 +10,11 @@ import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import com.example.mysmscode.domain.CreateProcessingOutcomeUseCase
 import com.example.mysmscode.domain.FinalizeForwardingOutcomeUseCase
+import com.example.mysmscode.domain.ForwardDispatchResult
 import com.example.mysmscode.domain.ForwardMessage
+import com.example.mysmscode.domain.ForwardAttemptStatus
 import com.example.mysmscode.domain.ProcessIncomingSmsUseCase
+import com.example.mysmscode.domain.RetryFailedAttemptUseCase
 import com.example.mysmscode.domain.SmsSource
 import com.example.mysmscode.network.WebhookDispatcher
 import kotlinx.coroutines.CoroutineScope
@@ -26,6 +29,7 @@ class MonitoringForegroundService : Service() {
     private val processingUseCase = ProcessIncomingSmsUseCase()
     private val outcomeUseCase = CreateProcessingOutcomeUseCase()
     private val finalizeOutcomeUseCase = FinalizeForwardingOutcomeUseCase()
+    private val retryFailedAttemptUseCase = RetryFailedAttemptUseCase()
     private val webhookDispatcher = WebhookDispatcher()
 
     override fun onCreate() {
@@ -48,6 +52,15 @@ class MonitoringForegroundService : Service() {
 
             ACTION_START_MONITORING -> {
                 startForeground(NOTIFICATION_ID, buildNotification("Monitoring started"))
+            }
+
+            ACTION_RETRY_ATTEMPT -> {
+                val attemptId = intent.getLongExtra(EXTRA_ATTEMPT_ID, -1L)
+                if (attemptId > 0L) {
+                    serviceScope.launch {
+                        handleRetryAttempt(attemptId)
+                    }
+                }
             }
         }
         return START_STICKY
@@ -95,11 +108,45 @@ class MonitoringForegroundService : Service() {
                 finalizeOutcomeUseCase.finalize(initialOutcome, dispatchResults)
             }
             container.processingRepository.saveOutcome(finalOutcome)
-            val recordCount = container.processingRepository.countRecords()
-            val text = "Processed ${finalOutcome.record.senderNumber} with ${finalOutcome.record.status.name}. Stored records: $recordCount"
-            val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-            notificationManager.notify(NOTIFICATION_ID, buildNotification(text))
+            notifyStatus("Processed ${finalOutcome.record.senderNumber} with ${finalOutcome.record.status.name}.")
         }
+    }
+
+    private suspend fun handleRetryAttempt(attemptId: Long) {
+        val container = (application as MySmsCodeApplication).container
+        val failedAttempt = container.processingRepository.getRetryableAttemptById(attemptId) ?: run {
+            notifyStatus("Retry skipped because the failed attempt was not found.")
+            return
+        }
+        val robot = container.robotRepository.getAll().firstOrNull { it.id == failedAttempt.robotId && it.enabled }
+        val dispatchResult = if (robot == null) {
+            ForwardDispatchResult(
+                robotId = failedAttempt.robotId,
+                channel = failedAttempt.robotType.name,
+                status = ForwardAttemptStatus.FAILED,
+                responseCode = null,
+                responseMessage = "Robot endpoint is missing or disabled.",
+                recoverable = false,
+            )
+        } else {
+            webhookDispatcher.dispatch(
+                robot = robot,
+                message = ForwardMessage(
+                    senderNumber = failedAttempt.senderNumber,
+                    messageBody = failedAttempt.messageBody,
+                    matchedKeyword = failedAttempt.matchedKeyword,
+                    receivedAt = failedAttempt.receivedAt,
+                ),
+            )
+        }
+        val execution = retryFailedAttemptUseCase.retry(failedAttempt, dispatchResult)
+        container.processingRepository.saveRetryExecution(failedAttempt, execution)
+        notifyStatus("Retried ${failedAttempt.senderNumber} via ${failedAttempt.robotType.name}: ${execution.nextAttempt.status.name}")
+    }
+
+    private fun notifyStatus(contentText: String) {
+        val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        notificationManager.notify(NOTIFICATION_ID, buildNotification(contentText))
     }
 
     private fun buildNotification(contentText: String) = NotificationCompat.Builder(this, CHANNEL_ID)
@@ -124,8 +171,10 @@ class MonitoringForegroundService : Service() {
         private const val NOTIFICATION_ID = 1001
         private const val ACTION_START_MONITORING = "com.example.mysmscode.action.START_MONITORING"
         private const val ACTION_PROCESS_SMS = "com.example.mysmscode.action.PROCESS_SMS"
+        private const val ACTION_RETRY_ATTEMPT = "com.example.mysmscode.action.RETRY_ATTEMPT"
         private const val EXTRA_SENDER_NUMBER = "extra_sender_number"
         private const val EXTRA_MESSAGE_BODY = "extra_message_body"
+        private const val EXTRA_ATTEMPT_ID = "extra_attempt_id"
 
         fun startMonitoring(context: Context) {
             val intent = Intent(context, MonitoringForegroundService::class.java).apply {
@@ -139,6 +188,14 @@ class MonitoringForegroundService : Service() {
                 action = ACTION_PROCESS_SMS
                 putExtra(EXTRA_SENDER_NUMBER, senderNumber)
                 putExtra(EXTRA_MESSAGE_BODY, messageBody)
+            }
+            ContextCompat.startForegroundService(context, intent)
+        }
+
+        fun retryFailedAttempt(context: Context, attemptId: Long) {
+            val intent = Intent(context, MonitoringForegroundService::class.java).apply {
+                action = ACTION_RETRY_ATTEMPT
+                putExtra(EXTRA_ATTEMPT_ID, attemptId)
             }
             ContextCompat.startForegroundService(context, intent)
         }
