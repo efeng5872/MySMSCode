@@ -58,10 +58,12 @@ import com.example.mysmscode.domain.RobotEndpoint
 import com.example.mysmscode.domain.RobotType
 import com.example.mysmscode.domain.SenderRule
 import com.example.mysmscode.domain.SimulationInjectionValidation
+import com.example.mysmscode.domain.buildSimulationFeedbackPlan
 import com.example.mysmscode.domain.validateSimulationInjection
 import com.example.mysmscode.domain.SmsRecordPreview
 import com.example.mysmscode.ui.theme.MySMSCodeTheme
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -312,6 +314,7 @@ private fun ConfigurationWorkbench(container: AppContainer) {
                             statusMessage = validation.reason
                         }
                         is SimulationInjectionValidation.Valid -> {
+                            val feedbackPlan = buildSimulationFeedbackPlan(validation.request.senderNumber)
                             MonitoringForegroundService.enqueueSimulation(
                                 context = context,
                                 senderNumber = validation.request.senderNumber,
@@ -319,7 +322,13 @@ private fun ConfigurationWorkbench(container: AppContainer) {
                             )
                             simulationSenderNumber = ""
                             simulationMessageBody = ""
-                            statusMessage = "Simulation enqueued for ${validation.request.senderNumber}."
+                            statusMessage = feedbackPlan.initialStatusMessage
+                            scope.launch {
+                                feedbackPlan.refreshDelaysMillis.forEach { refreshDelay ->
+                                    delay(refreshDelay)
+                                    reloadData()
+                                }
+                            }
                         }
                     }
                 },

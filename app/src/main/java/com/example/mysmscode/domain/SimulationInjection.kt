@@ -31,3 +31,13 @@ fun validateSimulationInjection(
         )
     )
 }
+
+data class SimulationFeedbackPlan(
+    val initialStatusMessage: String,
+    val refreshDelaysMillis: List<Long>,
+)
+
+fun buildSimulationFeedbackPlan(senderNumber: String): SimulationFeedbackPlan = SimulationFeedbackPlan(
+    initialStatusMessage = "Simulation enqueued for $senderNumber.",
+    refreshDelaysMillis = listOf(250L, 1500L),
+)
