@@ -30,16 +30,18 @@ class FinalizeForwardingOutcomeUseCaseTest {
                 ForwardDispatchResult(robotId = 1L, channel = "FEISHU", status = ForwardAttemptStatus.SUCCESS, responseCode = "200", responseMessage = "ok", recoverable = false),
                 ForwardDispatchResult(robotId = 2L, channel = "WECOM", status = ForwardAttemptStatus.SUCCESS, responseCode = "200", responseMessage = "ok", recoverable = false),
             ),
+            attemptedAt = 10_000L,
         )
 
         assertEquals(SmsRecordStatus.SUCCESS, finalized.record.status)
         assertNull(finalized.record.failureReason)
         assertTrue(finalized.attempts.all { it.status == ForwardAttemptStatus.SUCCESS })
         assertEquals("200", finalized.attempts.first().responseCode)
+        assertNull(finalized.attempts.first().nextRetryAt)
     }
 
     @Test
-    fun failedDispatch_marksRecordAsFailedAndCarriesReason() {
+    fun failedDispatch_marksRecordAsFailedAndSchedulesRetry() {
         val finalized = useCase.finalize(
             outcome = ProcessingOutcomeDraft(
                 record = SmsRecordDraft(
@@ -57,11 +59,13 @@ class FinalizeForwardingOutcomeUseCaseTest {
             results = listOf(
                 ForwardDispatchResult(robotId = 1L, channel = "FEISHU", status = ForwardAttemptStatus.FAILED, responseCode = null, responseMessage = "timeout", recoverable = true),
             ),
+            attemptedAt = 10_000L,
         )
 
         assertEquals(SmsRecordStatus.FAILED, finalized.record.status)
         assertTrue(finalized.record.failureReason!!.contains("timeout"))
         assertEquals(ForwardAttemptStatus.FAILED, finalized.attempts.single().status)
         assertTrue(finalized.attempts.single().recoverable)
+        assertEquals(70_000L, finalized.attempts.single().nextRetryAt)
     }
 }

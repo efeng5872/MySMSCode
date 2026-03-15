@@ -90,4 +90,6 @@ data class RetryableAttemptRow(
     @ColumnInfo(name = "response_message")
     val lastErrorMessage: String?,
     val recoverable: Boolean,
+    @ColumnInfo(name = "next_retry_at")
+    val nextRetryAt: Long?,
 )

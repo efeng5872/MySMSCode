@@ -81,6 +81,7 @@ data class ForwardAttemptDraft(
     val recoverable: Boolean,
     val responseCode: String? = null,
     val responseMessage: String? = null,
+    val nextRetryAt: Long? = null,
 )
 
 data class ForwardDispatchResult(
@@ -105,12 +106,18 @@ data class RetryableAttempt(
     val attemptNumber: Int,
     val lastErrorMessage: String?,
     val recoverable: Boolean,
+    val nextRetryAt: Long? = null,
 )
 
 data class RetryExecution(
     val recordStatus: SmsRecordStatus,
     val recordFailureReason: String?,
     val nextAttempt: ForwardAttemptDraft,
+)
+
+data class RetryScheduleDecision(
+    val recoverable: Boolean,
+    val nextRetryAt: Long?,
 )
 
 data class ProcessingOutcomeDraft(

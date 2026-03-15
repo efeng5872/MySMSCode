@@ -40,4 +40,8 @@
 - Extended Room queries and repositories to surface only the latest retryable failed attempts and to append retry attempts while recomputing record-level status from all latest channel results.
 - Added a foreground-service retry action so the app can re-dispatch a single failed channel attempt by id.
 - Added a failed retry queue card to the Compose workbench so users can inspect retryable failures and trigger manual retry.
-- Ran the full `testDebugUnitTest` suite successfully after the retry queue and retry execution changes.
+- Added `AutoRetryPolicyUseCase` and unit tests for 1 minute / 5 minute / 15 minute backoff plus retry exhaustion.
+- Extended forward attempt models and persistence with `nextRetryAt` so failures can be scheduled rather than only recorded.
+- Updated finalize and retry use cases to assign retry windows automatically when dispatches fail.
+- Added Room queries for due retry attempts and updated the foreground service to poll and execute automatic retries while running.
+- Ran the full `testDebugUnitTest` suite successfully after the automatic retry scheduling changes.

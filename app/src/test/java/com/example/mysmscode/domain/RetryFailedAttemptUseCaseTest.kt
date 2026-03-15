@@ -25,6 +25,7 @@ class RetryFailedAttemptUseCaseTest {
                 attemptNumber = 1,
                 lastErrorMessage = "timeout",
                 recoverable = true,
+                nextRetryAt = 60_000L,
             ),
             dispatchResult = ForwardDispatchResult(
                 robotId = 1L,
@@ -34,6 +35,7 @@ class RetryFailedAttemptUseCaseTest {
                 responseMessage = "ok",
                 recoverable = false,
             ),
+            attemptedAt = 120_000L,
         )
 
         assertEquals(SmsRecordStatus.SUCCESS, execution.recordStatus)
@@ -41,10 +43,11 @@ class RetryFailedAttemptUseCaseTest {
         assertEquals(2, execution.nextAttempt.attemptNumber)
         assertEquals(ForwardAttemptStatus.SUCCESS, execution.nextAttempt.status)
         assertEquals("200", execution.nextAttempt.responseCode)
+        assertNull(execution.nextAttempt.nextRetryAt)
     }
 
     @Test
-    fun failedRetry_keepsRecordFailedAndCarriesErrorMessage() {
+    fun failedRetry_keepsRecordFailedAndSchedulesNextAttempt() {
         val execution = useCase.retry(
             failedAttempt = RetryableAttempt(
                 attemptId = 9L,
@@ -59,6 +62,7 @@ class RetryFailedAttemptUseCaseTest {
                 attemptNumber = 2,
                 lastErrorMessage = "connection reset",
                 recoverable = true,
+                nextRetryAt = 300_000L,
             ),
             dispatchResult = ForwardDispatchResult(
                 robotId = 2L,
@@ -68,11 +72,13 @@ class RetryFailedAttemptUseCaseTest {
                 responseMessage = "timeout",
                 recoverable = true,
             ),
+            attemptedAt = 120_000L,
         )
 
         assertEquals(SmsRecordStatus.FAILED, execution.recordStatus)
         assertTrue(execution.recordFailureReason!!.contains("timeout"))
         assertEquals(3, execution.nextAttempt.attemptNumber)
         assertTrue(execution.nextAttempt.recoverable)
+        assertEquals(1_020_000L, execution.nextAttempt.nextRetryAt)
     }
 }

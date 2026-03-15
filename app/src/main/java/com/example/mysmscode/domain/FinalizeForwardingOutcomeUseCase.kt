@@ -1,10 +1,13 @@
 package com.example.mysmscode.domain
 
-class FinalizeForwardingOutcomeUseCase {
+class FinalizeForwardingOutcomeUseCase(
+    private val autoRetryPolicyUseCase: AutoRetryPolicyUseCase = AutoRetryPolicyUseCase(),
+) {
 
     fun finalize(
         outcome: ProcessingOutcomeDraft,
         results: List<ForwardDispatchResult>,
+        attemptedAt: Long,
     ): ProcessingOutcomeDraft {
         if (outcome.attempts.isEmpty()) {
             return outcome
@@ -14,17 +17,33 @@ class FinalizeForwardingOutcomeUseCase {
         val finalizedAttempts = outcome.attempts.map { attempt ->
             val result = resultByRobotAndChannel[attempt.robotId to attempt.channel]
             if (result == null) {
+                val retryDecision = autoRetryPolicyUseCase.schedule(
+                    attemptNumber = attempt.attemptNumber,
+                    recoverable = true,
+                    now = attemptedAt,
+                )
                 attempt.copy(
                     status = ForwardAttemptStatus.FAILED,
-                    recoverable = true,
+                    recoverable = retryDecision.recoverable,
                     responseMessage = "Missing dispatch result for ${attempt.channel}.",
+                    nextRetryAt = retryDecision.nextRetryAt,
                 )
             } else {
+                val retryDecision = if (result.status == ForwardAttemptStatus.FAILED) {
+                    autoRetryPolicyUseCase.schedule(
+                        attemptNumber = attempt.attemptNumber,
+                        recoverable = result.recoverable,
+                        now = attemptedAt,
+                    )
+                } else {
+                    RetryScheduleDecision(recoverable = false, nextRetryAt = null)
+                }
                 attempt.copy(
                     status = result.status,
-                    recoverable = result.recoverable,
+                    recoverable = retryDecision.recoverable,
                     responseCode = result.responseCode,
                     responseMessage = result.responseMessage,
+                    nextRetryAt = retryDecision.nextRetryAt,
                 )
             }
         }

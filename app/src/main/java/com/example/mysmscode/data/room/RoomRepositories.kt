@@ -104,6 +104,10 @@ class RoomProcessingRepository(
     suspend fun getRetryableAttemptById(attemptId: Long): RetryableAttempt? {
         return processingDao.getRetryableAttemptById(attemptId)?.toDomain()
     }
+
+    suspend fun getDueRetryableAttempts(now: Long, limit: Int = 20): List<RetryableAttempt> {
+        return processingDao.getDueRetryableAttempts(now, limit).map(RetryableAttemptRow::toDomain)
+    }
 }
 
 private fun SmsRecordDraft.toEntity(): SmsRecordEntity = SmsRecordEntity(
@@ -126,7 +130,7 @@ private fun ForwardAttemptDraft.toEntity(recordId: Long): ForwardAttemptEntity =
     responseCode = responseCode,
     responseMessage = responseMessage,
     attemptedAt = System.currentTimeMillis(),
-    nextRetryAt = null,
+    nextRetryAt = nextRetryAt,
     recoverable = recoverable,
 )
 
@@ -143,4 +147,5 @@ private fun RetryableAttemptRow.toDomain(): RetryableAttempt = RetryableAttempt(
     attemptNumber = attemptNumber,
     lastErrorMessage = lastErrorMessage,
     recoverable = recoverable,
+    nextRetryAt = nextRetryAt,
 )

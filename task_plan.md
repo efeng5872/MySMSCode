@@ -9,7 +9,7 @@ Build an Android app that monitors incoming SMS messages from configured sender 
 | 1. Inspect current project state | completed | Android Studio template project confirmed |
 | 2. Confirm scope and constraints | completed | UI scope, service model, history, simulation, robot reuse, and edge rules confirmed |
 | 3. Write requirements/design/test docs | completed | Documents reviewed and finalized under `docs/` |
-| 4. Implement core feature with TDD | in_progress | Domain, repositories, Room persistence, configuration workbench, service/receiver pipeline, webhook dispatch, recent-history view, and manual retry chain implemented |
+| 4. Implement core feature with TDD | in_progress | Domain, repositories, Room persistence, configuration workbench, service/receiver pipeline, webhook dispatch, recent-history view, manual retry chain, and automatic retry scheduling implemented |
 | 5. Verify and summarize | pending | Unit tests and build verification |
 
 ## Decisions
@@ -22,20 +22,21 @@ Build an Android app that monitors incoming SMS messages from configured sender 
 - Robot webhook endpoints are reusable global configurations; sender rules select linked robots instead of duplicating webhook settings.
 - Keyword matching is case-insensitive substring matching with OR semantics.
 - Manual retry operates on a single failed channel attempt.
+- Automatic retry now uses fixed backoff windows of 1 minute, 5 minutes, and 15 minutes for recoverable failures, with no further automatic retries after the third retry window is exhausted.
 - Disabled sender rules are ignored and not stored.
 - The first release does not implement SMS de-duplication.
 - Domain baseline now includes ignore, not-matched, pending-forward, configuration-failed, success, and failed outcomes.
 - In-memory repositories now enforce unique robot names, unique sender numbers, and multi-robot rule associations.
 - Room is enabled with KSP and a compatibility flag for AGP built-in Kotlin in this environment.
 - The current app UI provides a Room-backed configuration workbench, recent-history preview, failed retry queue, and monitoring controls.
-- The Android shell now includes a foreground service and SMS receiver pipeline that route incoming SMS through the tested domain logic, real webhook dispatching, and manual retry execution.
+- The Android shell now includes a foreground service and SMS receiver pipeline that route incoming SMS through the tested domain logic, real webhook dispatching, manual retry execution, and automatic retry polling.
 
 ## Risks
 - SMS broadcast behavior differs by Android version and OEM restrictions.
 - Reading SMS requires runtime permission and likely default SMS app considerations on some devices.
 - Feishu and WeCom robot APIs may have rate limits, security signatures, or IP restrictions depending on configuration.
 - Local command-line builds currently fall back when the Kotlin daemon cannot access the default user profile temp path.
-- Automatic retry scheduling is still not implemented; current retry support is manual and initiated from the app UI.
+- Automatic retry polling currently depends on the foreground service remaining alive; there is not yet a separate scheduler or reboot recovery path.
 
 ## Errors Encountered
 | Error | Attempt | Resolution |

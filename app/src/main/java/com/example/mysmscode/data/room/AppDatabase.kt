@@ -55,7 +55,7 @@ interface ProcessingDao {
         """
         SELECT fa.id AS attempt_id, fa.sms_record_id, sr.sender_number, sr.message_body, sr.matched_keyword,
                sr.received_at, fa.robot_endpoint_id, re.name AS robot_name, re.type AS robot_type,
-               fa.attempt_number, fa.response_message, fa.recoverable
+               fa.attempt_number, fa.response_message, fa.recoverable, fa.next_retry_at
         FROM forward_attempts fa
         INNER JOIN sms_records sr ON sr.id = fa.sms_record_id
         INNER JOIN robot_endpoints re ON re.id = fa.robot_endpoint_id
@@ -77,7 +77,7 @@ interface ProcessingDao {
         """
         SELECT fa.id AS attempt_id, fa.sms_record_id, sr.sender_number, sr.message_body, sr.matched_keyword,
                sr.received_at, fa.robot_endpoint_id, re.name AS robot_name, re.type AS robot_type,
-               fa.attempt_number, fa.response_message, fa.recoverable
+               fa.attempt_number, fa.response_message, fa.recoverable, fa.next_retry_at
         FROM forward_attempts fa
         INNER JOIN sms_records sr ON sr.id = fa.sms_record_id
         INNER JOIN robot_endpoints re ON re.id = fa.robot_endpoint_id
@@ -86,6 +86,30 @@ interface ProcessingDao {
         """
     )
     suspend fun getRetryableAttemptById(attemptId: Long): RetryableAttemptRow?
+
+    @Query(
+        """
+        SELECT fa.id AS attempt_id, fa.sms_record_id, sr.sender_number, sr.message_body, sr.matched_keyword,
+               sr.received_at, fa.robot_endpoint_id, re.name AS robot_name, re.type AS robot_type,
+               fa.attempt_number, fa.response_message, fa.recoverable, fa.next_retry_at
+        FROM forward_attempts fa
+        INNER JOIN sms_records sr ON sr.id = fa.sms_record_id
+        INNER JOIN robot_endpoints re ON re.id = fa.robot_endpoint_id
+        WHERE fa.status = 'FAILED'
+          AND fa.recoverable = 1
+          AND fa.next_retry_at IS NOT NULL
+          AND fa.next_retry_at <= :now
+          AND fa.attempt_number = (
+              SELECT MAX(inner_fa.attempt_number)
+              FROM forward_attempts inner_fa
+              WHERE inner_fa.sms_record_id = fa.sms_record_id
+                AND inner_fa.robot_endpoint_id = fa.robot_endpoint_id
+          )
+        ORDER BY fa.next_retry_at ASC
+        LIMIT :limit
+        """
+    )
+    suspend fun getDueRetryableAttempts(now: Long, limit: Int): List<RetryableAttemptRow>
 
     @Query(
         """
@@ -123,7 +147,7 @@ interface ProcessingDao {
         SmsRecordEntity::class,
         ForwardAttemptEntity::class,
     ],
-    version = 2,
+    version = 3,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {

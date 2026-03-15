@@ -10,18 +10,24 @@ import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import com.example.mysmscode.domain.CreateProcessingOutcomeUseCase
 import com.example.mysmscode.domain.FinalizeForwardingOutcomeUseCase
+import com.example.mysmscode.domain.ForwardAttemptStatus
 import com.example.mysmscode.domain.ForwardDispatchResult
 import com.example.mysmscode.domain.ForwardMessage
-import com.example.mysmscode.domain.ForwardAttemptStatus
 import com.example.mysmscode.domain.ProcessIncomingSmsUseCase
 import com.example.mysmscode.domain.RetryFailedAttemptUseCase
+import com.example.mysmscode.domain.RetryableAttempt
 import com.example.mysmscode.domain.SmsSource
 import com.example.mysmscode.network.WebhookDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 class MonitoringForegroundService : Service() {
 
@@ -31,14 +37,18 @@ class MonitoringForegroundService : Service() {
     private val finalizeOutcomeUseCase = FinalizeForwardingOutcomeUseCase()
     private val retryFailedAttemptUseCase = RetryFailedAttemptUseCase()
     private val webhookDispatcher = WebhookDispatcher()
+    private val retryMutex = Mutex()
+    private var retryLoopJob: Job? = null
 
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
         startForeground(NOTIFICATION_ID, buildNotification("Monitoring skeleton active"))
+        ensureRetryLoop()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        ensureRetryLoop()
         when (intent?.action) {
             ACTION_PROCESS_SMS -> {
                 val senderNumber = intent.getStringExtra(EXTRA_SENDER_NUMBER).orEmpty()
@@ -46,12 +56,16 @@ class MonitoringForegroundService : Service() {
                 if (senderNumber.isNotBlank() && messageBody.isNotBlank()) {
                     serviceScope.launch {
                         handleIncomingSms(senderNumber, messageBody)
+                        processDueRetries()
                     }
                 }
             }
 
             ACTION_START_MONITORING -> {
                 startForeground(NOTIFICATION_ID, buildNotification("Monitoring started"))
+                serviceScope.launch {
+                    processDueRetries()
+                }
             }
 
             ACTION_RETRY_ATTEMPT -> {
@@ -67,11 +81,24 @@ class MonitoringForegroundService : Service() {
     }
 
     override fun onDestroy() {
+        retryLoopJob?.cancel()
         serviceScope.cancel()
         super.onDestroy()
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
+
+    private fun ensureRetryLoop() {
+        if (retryLoopJob?.isActive == true) {
+            return
+        }
+        retryLoopJob = serviceScope.launch {
+            while (isActive) {
+                processDueRetries()
+                delay(RETRY_POLL_INTERVAL_MS)
+            }
+        }
+    }
 
     private suspend fun handleIncomingSms(senderNumber: String, messageBody: String) {
         val container = (application as MySmsCodeApplication).container
@@ -83,12 +110,13 @@ class MonitoringForegroundService : Service() {
             rules = rules,
             robots = robots,
         )
+        val attemptedAt = System.currentTimeMillis()
         val initialOutcome = outcomeUseCase.create(
             senderNumber = senderNumber,
             messageBody = messageBody,
             source = SmsSource.REAL_SMS,
             processingResult = processingResult,
-            receivedAt = System.currentTimeMillis(),
+            receivedAt = attemptedAt,
         )
         if (initialOutcome != null) {
             val forwardMessage = ForwardMessage(
@@ -105,7 +133,7 @@ class MonitoringForegroundService : Service() {
             val finalOutcome = if (initialOutcome.attempts.isEmpty()) {
                 initialOutcome
             } else {
-                finalizeOutcomeUseCase.finalize(initialOutcome, dispatchResults)
+                finalizeOutcomeUseCase.finalize(initialOutcome, dispatchResults, attemptedAt)
             }
             container.processingRepository.saveOutcome(finalOutcome)
             notifyStatus("Processed ${finalOutcome.record.senderNumber} with ${finalOutcome.record.status.name}.")
@@ -113,11 +141,27 @@ class MonitoringForegroundService : Service() {
     }
 
     private suspend fun handleRetryAttempt(attemptId: Long) {
-        val container = (application as MySmsCodeApplication).container
-        val failedAttempt = container.processingRepository.getRetryableAttemptById(attemptId) ?: run {
-            notifyStatus("Retry skipped because the failed attempt was not found.")
-            return
+        retryMutex.withLock {
+            val container = (application as MySmsCodeApplication).container
+            val failedAttempt = container.processingRepository.getRetryableAttemptById(attemptId) ?: run {
+                notifyStatus("Retry skipped because the failed attempt was not found.")
+                return
+            }
+            executeRetry(container, failedAttempt)
         }
+    }
+
+    private suspend fun processDueRetries() {
+        retryMutex.withLock {
+            val container = (application as MySmsCodeApplication).container
+            val dueAttempts = container.processingRepository.getDueRetryableAttempts(System.currentTimeMillis(), limit = 20)
+            dueAttempts.forEach { attempt ->
+                executeRetry(container, attempt)
+            }
+        }
+    }
+
+    private suspend fun executeRetry(container: AppContainer, failedAttempt: RetryableAttempt) {
         val robot = container.robotRepository.getAll().firstOrNull { it.id == failedAttempt.robotId && it.enabled }
         val dispatchResult = if (robot == null) {
             ForwardDispatchResult(
@@ -139,7 +183,11 @@ class MonitoringForegroundService : Service() {
                 ),
             )
         }
-        val execution = retryFailedAttemptUseCase.retry(failedAttempt, dispatchResult)
+        val execution = retryFailedAttemptUseCase.retry(
+            failedAttempt = failedAttempt,
+            dispatchResult = dispatchResult,
+            attemptedAt = System.currentTimeMillis(),
+        )
         container.processingRepository.saveRetryExecution(failedAttempt, execution)
         notifyStatus("Retried ${failedAttempt.senderNumber} via ${failedAttempt.robotType.name}: ${execution.nextAttempt.status.name}")
     }
@@ -175,6 +223,7 @@ class MonitoringForegroundService : Service() {
         private const val EXTRA_SENDER_NUMBER = "extra_sender_number"
         private const val EXTRA_MESSAGE_BODY = "extra_message_body"
         private const val EXTRA_ATTEMPT_ID = "extra_attempt_id"
+        private const val RETRY_POLL_INTERVAL_MS = 30_000L
 
         fun startMonitoring(context: Context) {
             val intent = Intent(context, MonitoringForegroundService::class.java).apply {
