@@ -44,6 +44,9 @@ import com.example.mysmscode.data.RepositorySaveResult
 import com.example.mysmscode.domain.BuildConfigurationSummaryUseCase
 import com.example.mysmscode.domain.ConfigurationRuleSummary
 import com.example.mysmscode.domain.RetryPolicyConfig
+import com.example.mysmscode.domain.autoRetryStatusLabel
+import com.example.mysmscode.domain.completedRetryCount
+import com.example.mysmscode.domain.formatRetryTimestamp
 import com.example.mysmscode.domain.RetryableAttempt
 import com.example.mysmscode.domain.RobotEndpoint
 import com.example.mysmscode.domain.RobotType
@@ -566,7 +569,7 @@ private fun FailedRetryCard(
                         Text(attempt.senderNumber, fontWeight = FontWeight.SemiBold)
                         Text(attempt.messageBody, style = MaterialTheme.typography.bodyMedium)
                         Text(
-                            text = "Robot: ${attempt.robotName} (${attempt.robotType.name}) | Attempt: ${attempt.attemptNumber}",
+                            text = "Robot: ${attempt.robotName} (${attempt.robotType.name}) | Attempt: ${attempt.attemptNumber} | Retries completed: ${attempt.completedRetryCount()}",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -576,7 +579,12 @@ private fun FailedRetryCard(
                             color = MaterialTheme.colorScheme.error,
                         )
                         Text(
-                            text = "Next auto retry at: ${attempt.nextRetryAt?.toString() ?: "no automatic retry scheduled"}",
+                            text = "Retry status: ${attempt.autoRetryStatusLabel()}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Text(
+                            text = "Next auto retry at: ${attempt.nextRetryAt?.let(::formatRetryTimestamp) ?: "no automatic retry scheduled"}",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )

@@ -49,3 +49,4 @@
 - Updated the foreground service to read the saved retry policy before scheduling or executing retries.
 - Extended the failed retry queue UI to show the next automatic retry timestamp for each retryable channel.
 - Ran the full `testDebugUnitTest` suite successfully after the configurable retry policy changes.
+- Added a retry-attempt presentation helper so the failed retry queue can show readable local timestamps, completed retry counts, and whether automatic retries are scheduled, exhausted, or disabled.
