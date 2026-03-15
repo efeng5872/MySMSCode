@@ -1,0 +1,39 @@
+# Progress Log
+
+## 2026-03-14
+- Read project structure and confirmed current app is still the default Android template.
+- Loaded `brainstorming`, `planning-with-files`, and `test-driven-development` skill instructions.
+- Created planning files to track requirements, design, testing, and implementation phases.
+- Confirmed with the user that first release should include a configuration UI for sender numbers, keywords, and Feishu/WeCom robot URLs.
+- Reviewed the public `mobile-next/mobile-mcp` project as a background architecture reference and noted the applicable service-oriented ideas.
+- Confirmed the preferred runtime model is a resident foreground service with notification visibility.
+- Confirmed the matching model should be sender-specific rather than global rules.
+- Confirmed first release needs in-app history and failed retry visibility.
+- Confirmed the app should store only configured-number messages and include a debug simulation channel.
+- Wrote requirements, design, and test plan drafts into the `docs/` directory for user review.
+
+## 2026-03-15
+- Updated the documents so robot endpoints are configured globally and sender rules select reusable robot entries.
+- Completed a cross-review for consistency, open questions, and missing tests.
+- Added confirmed rules for keyword matching semantics, single-attempt manual retry, unique constraints, disabled-rule handling, missing-robot configuration failure, notification-permission guidance, and first-release no-dedup behavior.
+- Recorded the sandbox issue affecting `apply_patch` during large doc updates.
+- Reinitialized the local `git` repository for the project workspace.
+- Wrote the first TDD test set for domain SMS processing behavior.
+- Implemented `ProcessIncomingSmsUseCase` and supporting domain models to satisfy the first test set.
+- Verified the new domain tests pass with `testDebugUnitTest`.
+- Documented local build environment workarounds: `GRADLE_USER_HOME`, `ANDROID_USER_HOME`, `KOTLIN_USER_HOME`, and local JDK 17 toolchain override.
+- Wrote and passed a second TDD test set for in-memory repository behavior covering unique robot names, unique sender numbers, robot associations, and robot updates.
+- Added Room dependencies, KSP integration, and AGP compatibility configuration.
+- Wrote and passed a third TDD test set for Room entity and aggregate mapping behavior.
+- Implemented Room entities, cross-reference model, DAOs, database skeleton, processing entities, keyword codec, and Room-backed repository wrappers.
+- Added a configuration summary use case and test coverage for rule-to-robot display logic.
+- Replaced the default template activity with a Room-backed Compose configuration workbench for adding robots and sender rules and viewing the current configuration snapshot.
+- Wired `AppContainer` and `MySmsCodeApplication` so the app now initializes the Room database and repositories at runtime.
+- Added `CreateProcessingOutcomeUseCase` and test coverage for translating processing results into persisted record/attempt drafts.
+- Added `MonitoringForegroundService`, `IncomingSmsReceiver`, and processing persistence repository wiring so incoming SMS can enter the foreground-service pipeline and be stored.
+- Added `WebhookDispatcher` test coverage and made webhook posting injectable and result-aware.
+- Added `FinalizeForwardingOutcomeUseCase` so webhook success or failure is folded into final persisted record status in a single save.
+- Extended processing models and Room attempt persistence with response code and response message fields.
+- Updated the foreground service to execute real webhook dispatches and persist final `SUCCESS` or `FAILED` outcomes.
+- Extended the Compose workbench with monitoring controls and a recent-history card backed by persisted SMS processing records.
+- Ran the full `testDebugUnitTest` suite successfully after the webhook and history changes.
