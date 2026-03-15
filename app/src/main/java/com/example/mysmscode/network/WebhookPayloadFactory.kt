@@ -46,6 +46,7 @@ class WebhookPayloadFactory {
 data class WebhookPostResult(
     val responseCode: Int,
     val responseMessage: String?,
+    val responseBody: String? = null,
 )
 
 class WebhookDispatcher(
@@ -60,15 +61,7 @@ class WebhookDispatcher(
 
         return try {
             val postResult = poster(robot.webhookUrl, payload)
-            val success = postResult.responseCode in 200..299
-            ForwardDispatchResult(
-                robotId = robot.id,
-                channel = robot.type.name,
-                status = if (success) ForwardAttemptStatus.SUCCESS else ForwardAttemptStatus.FAILED,
-                responseCode = postResult.responseCode.toString(),
-                responseMessage = postResult.responseMessage,
-                recoverable = !success,
-            )
+            evaluateResult(robot.type, robot.id, postResult)
         } catch (error: Exception) {
             ForwardDispatchResult(
                 robotId = robot.id,
@@ -80,6 +73,67 @@ class WebhookDispatcher(
             )
         }
     }
+
+    private fun evaluateResult(
+        robotType: RobotType,
+        robotId: Long,
+        postResult: WebhookPostResult,
+    ): ForwardDispatchResult {
+        if (postResult.responseCode !in 200..299) {
+            return ForwardDispatchResult(
+                robotId = robotId,
+                channel = robotType.name,
+                status = ForwardAttemptStatus.FAILED,
+                responseCode = postResult.responseCode.toString(),
+                responseMessage = postResult.responseBody?.takeIf { it.isNotBlank() } ?: postResult.responseMessage,
+                recoverable = true,
+            )
+        }
+
+        val businessResult = when (robotType) {
+            RobotType.FEISHU -> parseBusinessResult(postResult.responseBody, codeField = "code", messageField = "msg")
+            RobotType.WECOM -> parseBusinessResult(postResult.responseBody, codeField = "errcode", messageField = "errmsg")
+        }
+
+        val isSuccess = businessResult?.first != null && businessResult.first == 0
+        return if (isSuccess || businessResult == null) {
+            ForwardDispatchResult(
+                robotId = robotId,
+                channel = robotType.name,
+                status = ForwardAttemptStatus.SUCCESS,
+                responseCode = postResult.responseCode.toString(),
+                responseMessage = businessResult?.second ?: postResult.responseMessage,
+                recoverable = false,
+            )
+        } else {
+            ForwardDispatchResult(
+                robotId = robotId,
+                channel = robotType.name,
+                status = ForwardAttemptStatus.FAILED,
+                responseCode = postResult.responseCode.toString(),
+                responseMessage = businessResult.second ?: postResult.responseBody ?: postResult.responseMessage,
+                recoverable = false,
+            )
+        }
+    }
+}
+
+private fun parseBusinessResult(
+    responseBody: String?,
+    codeField: String,
+    messageField: String,
+): Pair<Int?, String?>? {
+    if (responseBody.isNullOrBlank()) {
+        return null
+    }
+    val codeMatch = Regex("\"$codeField\"\\s*:\\s*(-?\\d+)").find(responseBody)
+    val messageMatch = Regex("\"$messageField\"\\s*:\\s*\"([^\"]*)\"").find(responseBody)
+    val code = codeMatch?.groupValues?.getOrNull(1)?.toIntOrNull()
+    val message = messageMatch?.groupValues?.getOrNull(1)
+    if (code == null && message == null) {
+        return null
+    }
+    return code to message
 }
 
 private fun postJson(url: String, payload: String): WebhookPostResult {
@@ -96,8 +150,12 @@ private fun postJson(url: String, payload: String): WebhookPostResult {
         val responseCode = connection.responseCode
         val responseMessage = connection.responseMessage
         val stream = if (responseCode in 200..299) connection.inputStream else connection.errorStream
-        stream?.use { it.readBytes() }
-        WebhookPostResult(responseCode = responseCode, responseMessage = responseMessage)
+        val responseBody = stream?.use { String(it.readBytes(), Charsets.UTF_8) }
+        WebhookPostResult(
+            responseCode = responseCode,
+            responseMessage = responseMessage,
+            responseBody = responseBody,
+        )
     } finally {
         connection.disconnect()
     }

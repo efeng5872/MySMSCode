@@ -21,7 +21,11 @@ class WebhookDispatcherTest {
             poster = { url, payload ->
                 capturedUrl = url
                 capturedPayload = payload
-                WebhookPostResult(responseCode = 200, responseMessage = "ok")
+                WebhookPostResult(
+                    responseCode = 200,
+                    responseMessage = "OK",
+                    responseBody = """{"code":0,"msg":"success"}""",
+                )
             }
         )
 
@@ -45,6 +49,41 @@ class WebhookDispatcherTest {
         assertTrue(capturedPayload.contains("msg_type"))
         assertEquals(ForwardAttemptStatus.SUCCESS, result.status)
         assertEquals("200", result.responseCode)
+    }
+
+    @Test
+    fun dispatch_treatsFeishuBusinessErrorAsFailureEvenWhenHttpIs200() {
+        val dispatcher = WebhookDispatcher(
+            payloadFactory = WebhookPayloadFactory(),
+            poster = { _, _ ->
+                WebhookPostResult(
+                    responseCode = 200,
+                    responseMessage = "OK",
+                    responseBody = """{"code":19024,"msg":"Key Words Not Found"}""",
+                )
+            }
+        )
+
+        val result = dispatcher.dispatch(
+            robot = RobotEndpoint(
+                id = 1L,
+                name = "Ops",
+                type = RobotType.FEISHU,
+                webhookUrl = "https://example.com/feishu",
+                enabled = true,
+            ),
+            message = ForwardMessage(
+                senderNumber = "10690001",
+                messageBody = "Code 1234",
+                matchedKeyword = "code",
+                receivedAt = 123456789L,
+            )
+        )
+
+        assertEquals(ForwardAttemptStatus.FAILED, result.status)
+        assertEquals("200", result.responseCode)
+        assertTrue(result.responseMessage!!.contains("Key Words Not Found"))
+        assertTrue(result.recoverable.not())
     }
 
     @Test
