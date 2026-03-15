@@ -19,6 +19,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -43,6 +44,8 @@ import androidx.compose.ui.unit.dp
 import com.example.mysmscode.data.RepositorySaveResult
 import com.example.mysmscode.domain.BuildConfigurationSummaryUseCase
 import com.example.mysmscode.domain.ConfigurationRuleSummary
+import com.example.mysmscode.domain.FailedRetryFilterOption
+import com.example.mysmscode.domain.HistoryFilterOption
 import com.example.mysmscode.domain.RetryPolicyConfig
 import com.example.mysmscode.domain.autoRetryStatusLabel
 import com.example.mysmscode.domain.completedRetryCount
@@ -97,6 +100,8 @@ private fun ConfigurationWorkbench(container: AppContainer) {
     val selectedRobotIds = remember { mutableStateListOf<Long>() }
 
     var firstRetryDelayText by rememberSaveable { mutableStateOf("10") }
+    var historyFilter by rememberSaveable { mutableStateOf(HistoryFilterOption.ALL) }
+    var failedRetryFilter by rememberSaveable { mutableStateOf(FailedRetryFilterOption.ALL) }
     var secondRetryDelayText by rememberSaveable { mutableStateOf("30") }
     var thirdRetryDelayText by rememberSaveable { mutableStateOf("60") }
 
@@ -125,6 +130,8 @@ private fun ConfigurationWorkbench(container: AppContainer) {
     val summaries = remember(rules, robots) {
         summaryUseCase.build(rules = rules, robots = robots)
     }
+    val filteredRecentRecords = remember(recentRecords, historyFilter) { historyFilter.apply(recentRecords) }
+    val filteredFailedAttempts = remember(failedAttempts, failedRetryFilter) { failedRetryFilter.apply(failedAttempts) }
 
     Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
         Column(
@@ -150,8 +157,8 @@ private fun ConfigurationWorkbench(container: AppContainer) {
                 isLoading = isLoading,
                 robotCount = robots.size,
                 ruleCount = rules.size,
-                recentRecordCount = recentRecords.size,
-                failedRetryCount = failedAttempts.size,
+                recentRecordCount = filteredRecentRecords.size,
+                failedRetryCount = filteredFailedAttempts.size,
                 retryPolicyConfig = retryPolicyConfig,
                 onStartMonitoring = {
                     MonitoringForegroundService.startMonitoring(context)
@@ -292,13 +299,19 @@ private fun ConfigurationWorkbench(container: AppContainer) {
             )
             ConfigurationSummaryCard(robots = robots, summaries = summaries)
             FailedRetryCard(
-                attempts = failedAttempts,
+                attempts = filteredFailedAttempts,
+                selectedFilter = failedRetryFilter,
+                onFilterSelected = { failedRetryFilter = it },
                 onRetry = { attemptId ->
                     MonitoringForegroundService.retryFailedAttempt(context, attemptId)
                     statusMessage = "Retry requested for failed attempt #$attemptId."
                 },
             )
-            RecentHistoryCard(records = recentRecords)
+            RecentHistoryCard(
+                records = filteredRecentRecords,
+                selectedFilter = historyFilter,
+                onFilterSelected = { historyFilter = it },
+            )
         }
     }
 }
@@ -559,11 +572,18 @@ private fun ConfigurationSummaryCard(
 @Composable
 private fun FailedRetryCard(
     attempts: List<RetryableAttempt>,
+    selectedFilter: FailedRetryFilterOption,
+    onFilterSelected: (FailedRetryFilterOption) -> Unit,
     onRetry: (Long) -> Unit,
 ) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text("Failed Retry Queue", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            FilterChipRow(
+                labels = FailedRetryFilterOption.entries.map { it.label },
+                selectedIndex = FailedRetryFilterOption.entries.indexOf(selectedFilter),
+                onSelected = { onFilterSelected(FailedRetryFilterOption.entries[it]) },
+            )
             if (attempts.isEmpty()) {
                 Text("No retryable failed attempts right now.")
             } else {
@@ -605,10 +625,19 @@ private fun FailedRetryCard(
 }
 
 @Composable
-private fun RecentHistoryCard(records: List<SmsRecordPreview>) {
+private fun RecentHistoryCard(
+    records: List<SmsRecordPreview>,
+    selectedFilter: HistoryFilterOption,
+    onFilterSelected: (HistoryFilterOption) -> Unit,
+) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text("Recent History", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            FilterChipRow(
+                labels = HistoryFilterOption.entries.map { it.label },
+                selectedIndex = HistoryFilterOption.entries.indexOf(selectedFilter),
+                onSelected = { onFilterSelected(HistoryFilterOption.entries[it]) },
+            )
             if (records.isEmpty()) {
                 Text("No processed SMS records yet.")
             } else {
@@ -627,6 +656,23 @@ private fun RecentHistoryCard(records: List<SmsRecordPreview>) {
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun FilterChipRow(
+    labels: List<String>,
+    selectedIndex: Int,
+    onSelected: (Int) -> Unit,
+) {
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        labels.forEachIndexed { index, label ->
+            FilterChip(
+                selected = index == selectedIndex,
+                onClick = { onSelected(index) },
+                label = { Text(label) },
+            )
         }
     }
 }

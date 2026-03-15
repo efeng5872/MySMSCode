@@ -6,6 +6,36 @@ import java.time.format.DateTimeFormatter
 
 private val retryTimestampFormatter: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
 
+enum class HistoryFilterOption(val label: String) {
+    ALL("All"),
+    SUCCESS("Success"),
+    FAILED("Failed"),
+    NOT_MATCHED("Not Matched"),
+    CONFIGURATION_FAILED("Config Failed");
+
+    fun apply(records: List<SmsRecordPreview>): List<SmsRecordPreview> = when (this) {
+        ALL -> records
+        SUCCESS -> records.filter { it.status == "SUCCESS" }
+        FAILED -> records.filter { it.status == "FAILED" }
+        NOT_MATCHED -> records.filter { it.status == "NOT_MATCHED" }
+        CONFIGURATION_FAILED -> records.filter { it.status == "CONFIGURATION_FAILED" }
+    }
+}
+
+enum class FailedRetryFilterOption(val label: String) {
+    ALL("All"),
+    SCHEDULED("Scheduled"),
+    EXHAUSTED("Exhausted"),
+    NON_RECOVERABLE("Non-Recoverable");
+
+    fun apply(attempts: List<RetryableAttempt>): List<RetryableAttempt> = when (this) {
+        ALL -> attempts
+        SCHEDULED -> attempts.filter { it.nextRetryAt != null }
+        EXHAUSTED -> attempts.filter { it.nextRetryAt == null && it.recoverable }
+        NON_RECOVERABLE -> attempts.filter { !it.recoverable }
+    }
+}
+
 fun RetryableAttempt.completedRetryCount(): Int = (attemptNumber - 1).coerceAtLeast(0)
 
 fun RetryableAttempt.autoRetryStatusLabel(): String = when {
