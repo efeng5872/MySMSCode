@@ -10,7 +10,7 @@ Build an Android app that monitors incoming SMS messages from configured sender 
 | 2. Confirm scope and constraints | completed | UI scope, service model, history, simulation, robot reuse, and edge rules confirmed |
 | 3. Write requirements/design/test docs | completed | Documents reviewed and finalized under `docs/` |
 | 4. Implement core feature with TDD | in_progress | Domain, repositories, Room persistence, configuration workbench, service/receiver pipeline, webhook dispatch, recent-history view, manual retry chain, configurable automatic retry scheduling, retry settings UI, failed-retry observability improvements, readable recent-history presentation, presentation-layer status filters, simulation injection, and automatic post-injection refresh feedback implemented |
-| 5. Verify and summarize | in_progress | Automated unit tests complete, layered test report written, fresh-install permission flow and emulator SMS receive path validated; real Feishu/WeCom webhook validation still pending |
+| 5. Verify and summarize | in_progress | Automated unit tests complete, layered test reports written, fresh-install permission flow and emulator SMS receive path validated, live Feishu webhook success validated; live WeCom validation still pending |
 
 ## Decisions
 - Use existing single-module Android app as the starting point.
@@ -38,6 +38,7 @@ Build an Android app that monitors incoming SMS messages from configured sender 
 - The Android shell now includes a foreground service and SMS receiver pipeline that route incoming SMS through the tested domain logic, real webhook dispatching, manual retry execution, and automatic retry polling.
 - The workbench now includes a runtime permission card that requests SMS and notification permissions and blocks monitoring until they are granted.
 - Emulator validation on March 15, 2026 confirmed the fresh-install permission flow and a real SMS reaching the processing pipeline without manual adb permission grants.
+- Emulator validation on March 15, 2026 also confirmed a live Feishu webhook returned HTTP 200 and persisted a `SUCCESS` forwarding record.
 
 ## Risks
 - SMS broadcast behavior differs by Android version and OEM restrictions.
@@ -45,7 +46,7 @@ Build an Android app that monitors incoming SMS messages from configured sender 
 - Feishu and WeCom robot APIs may have rate limits, security signatures, or IP restrictions depending on configuration.
 - Local command-line builds currently fall back when the Kotlin daemon cannot access the default user profile temp path.
 - Automatic retry polling currently depends on the foreground service remaining alive; there is not yet a separate scheduler or reboot recovery path.
-- Real Feishu/WeCom webhook delivery has not yet been validated against live endpoints; current emulator checks still use a placeholder failing URL for negative-path verification.
+- Live WeCom webhook delivery has not yet been validated against a real endpoint.
 
 ## Errors Encountered
 | Error | Attempt | Resolution |
@@ -56,4 +57,3 @@ Build an Android app that monitors incoming SMS messages from configured sender 
 | KSP conflicted with AGP built-in Kotlin source-set restriction | 1 | Added `android.disallowKotlinSourceSets=false` in `gradle.properties` |
 | Kotlin daemon could not access the default temp marker path | multiple | Gradle fallback compilation still completed successfully with local workspace user-home overrides |
 | Foreground service startup initially crashed on Android 16 because the data-sync foreground permission was missing | 1 | Added `android.permission.FOREGROUND_SERVICE_DATA_SYNC` to the manifest and revalidated on emulator |
-

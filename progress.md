@@ -62,4 +62,6 @@
 - Fixed the Android 16 foreground-service startup crash by declaring `android.permission.FOREGROUND_SERVICE_DATA_SYNC` in the manifest.
 - Validated on the Medium_Phone_API_36.1 emulator that a fresh install shows the permission prompt flow, transitions to Permissions ready after approval, and enables the monitoring action.
 - Validated with a real emulator SMS that the runtime-permission flow now leads into the real receive -> process -> persist pipeline without manual adb permission grants.
-
+- Replaced the emulator test robot configuration with a live Feishu webhook and revalidated the existing `10690001` sender rule with keyword `code`.
+- Verified the real Feishu end-to-end path on the emulator: SMS received, rule matched, webhook returned HTTP 200, attempt persisted as `SUCCESS`, and no retry entry was created.
+- Exported a post-run database snapshot confirming the newest `sms_records` row reached `SUCCESS` and the newest `forward_attempts` row recorded `response_code = 200` and `response_message = OK`.
