@@ -54,3 +54,4 @@
 - Added presentation-layer filters for recent history and failed retry queues so records can be narrowed by status without changing repository queries.
 - Added a simulation injection card to the workbench and routed injected messages through the same foreground-service pipeline with source = Simulation.
 - Added a simulation feedback plan so injection now updates the status bar immediately and auto-refreshes the workbench shortly after enqueueing a test SMS.
+- Wrote the first layered test report documenting current automated coverage, pending Android/device validation, and next end-to-end verification steps.

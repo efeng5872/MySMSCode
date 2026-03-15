@@ -10,7 +10,7 @@ Build an Android app that monitors incoming SMS messages from configured sender 
 | 2. Confirm scope and constraints | completed | UI scope, service model, history, simulation, robot reuse, and edge rules confirmed |
 | 3. Write requirements/design/test docs | completed | Documents reviewed and finalized under `docs/` |
 | 4. Implement core feature with TDD | in_progress | Domain, repositories, Room persistence, configuration workbench, service/receiver pipeline, webhook dispatch, recent-history view, manual retry chain, configurable automatic retry scheduling, retry settings UI, failed-retry observability improvements, readable recent-history presentation, presentation-layer status filters, simulation injection, and automatic post-injection refresh feedback implemented |
-| 5. Verify and summarize | pending | Unit tests and build verification |
+| 5. Verify and summarize | in_progress | Automated unit tests complete, layered test report written, device/webhook end-to-end verification still pending |
 
 ## Decisions
 - Use existing single-module Android app as the starting point.
@@ -32,6 +32,7 @@ Build an Android app that monitors incoming SMS messages from configured sender 
 - The failed retry queue now shows readable next-retry timestamps, completed retry counts, and whether automatic retries are scheduled, exhausted, or disabled.
 - The recent-history card and failed retry queue now support in-app status filters without requiring new database queries.
 - The workbench now includes a simulation injection entry point that feeds sender number and message body into the same service pipeline with source = `SIMULATION`.
+- A phase-one layered test report now records automated coverage, current testing gaps, and the next device-level verification steps.
 - Simulation injection now triggers short follow-up refreshes so recent history and retry state update without a manual refresh tap.
 - The Android shell now includes a foreground service and SMS receiver pipeline that route incoming SMS through the tested domain logic, real webhook dispatching, manual retry execution, and automatic retry polling.
 
