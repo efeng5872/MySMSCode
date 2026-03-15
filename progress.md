@@ -52,3 +52,4 @@
 - Added a retry-attempt presentation helper so the failed retry queue can show readable local timestamps, completed retry counts, and whether automatic retries are scheduled, exhausted, or disabled.
 - Added a history-record presentation helper so the recent history card now shows readable local timestamps plus user-facing status and source labels.
 - Added presentation-layer filters for recent history and failed retry queues so records can be narrowed by status without changing repository queries.
+- Added a simulation injection card to the workbench and routed injected messages through the same foreground-service pipeline with source = Simulation.

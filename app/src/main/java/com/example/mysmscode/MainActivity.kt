@@ -57,6 +57,8 @@ import com.example.mysmscode.domain.RetryableAttempt
 import com.example.mysmscode.domain.RobotEndpoint
 import com.example.mysmscode.domain.RobotType
 import com.example.mysmscode.domain.SenderRule
+import com.example.mysmscode.domain.SimulationInjectionValidation
+import com.example.mysmscode.domain.validateSimulationInjection
 import com.example.mysmscode.domain.SmsRecordPreview
 import com.example.mysmscode.ui.theme.MySMSCodeTheme
 import kotlinx.coroutines.Dispatchers
@@ -95,6 +97,8 @@ private fun ConfigurationWorkbench(container: AppContainer) {
     var robotType by rememberSaveable { mutableStateOf(RobotType.FEISHU) }
 
     var senderNumber by rememberSaveable { mutableStateOf("") }
+    var simulationSenderNumber by rememberSaveable { mutableStateOf("") }
+    var simulationMessageBody by rememberSaveable { mutableStateOf("") }
     var keywordText by rememberSaveable { mutableStateOf("") }
     var ruleEnabled by rememberSaveable { mutableStateOf(true) }
     val selectedRobotIds = remember { mutableStateListOf<Long>() }
@@ -296,6 +300,29 @@ private fun ConfigurationWorkbench(container: AppContainer) {
                         }
                     }
                 }
+            )
+            SimulationInjectionCard(
+                senderNumber = simulationSenderNumber,
+                onSenderNumberChange = { simulationSenderNumber = it },
+                messageBody = simulationMessageBody,
+                onMessageBodyChange = { simulationMessageBody = it },
+                onInject = {
+                    when (val validation = validateSimulationInjection(simulationSenderNumber, simulationMessageBody)) {
+                        is SimulationInjectionValidation.Invalid -> {
+                            statusMessage = validation.reason
+                        }
+                        is SimulationInjectionValidation.Valid -> {
+                            MonitoringForegroundService.enqueueSimulation(
+                                context = context,
+                                senderNumber = validation.request.senderNumber,
+                                messageBody = validation.request.messageBody,
+                            )
+                            simulationSenderNumber = ""
+                            simulationMessageBody = ""
+                            statusMessage = "Simulation enqueued for ${validation.request.senderNumber}."
+                        }
+                    }
+                },
             )
             ConfigurationSummaryCard(robots = robots, summaries = summaries)
             FailedRetryCard(
@@ -529,6 +556,47 @@ private fun RuleFormCard(
                 modifier = Modifier.align(Alignment.End)
             ) {
                 Text("Save Rule")
+            }
+        }
+    }
+}
+
+@Composable
+private fun SimulationInjectionCard(
+    senderNumber: String,
+    onSenderNumberChange: (String) -> Unit,
+    messageBody: String,
+    onMessageBodyChange: (String) -> Unit,
+    onInject: () -> Unit,
+) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text("Simulation Injection", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            Text(
+                "Inject a test SMS into the same foreground-service pipeline. The record will be stored with source = Simulation.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            OutlinedTextField(
+                value = senderNumber,
+                onValueChange = onSenderNumberChange,
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text("Simulation sender number") },
+                placeholder = { Text("10690001") },
+            )
+            OutlinedTextField(
+                value = messageBody,
+                onValueChange = onMessageBodyChange,
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text("Simulation message body") },
+                placeholder = { Text("Your verification code is 123456") },
+            )
+            Button(
+                onClick = onInject,
+                enabled = senderNumber.isNotBlank() && messageBody.isNotBlank(),
+                modifier = Modifier.align(Alignment.End),
+            ) {
+                Text("Inject Simulation")
             }
         }
     }

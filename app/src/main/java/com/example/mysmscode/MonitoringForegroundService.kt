@@ -54,8 +54,10 @@ class MonitoringForegroundService : Service() {
                 val senderNumber = intent.getStringExtra(EXTRA_SENDER_NUMBER).orEmpty()
                 val messageBody = intent.getStringExtra(EXTRA_MESSAGE_BODY).orEmpty()
                 if (senderNumber.isNotBlank() && messageBody.isNotBlank()) {
+                    val sourceName = intent.getStringExtra(EXTRA_SMS_SOURCE)
+                    val source = sourceName?.let { runCatching { SmsSource.valueOf(it) }.getOrNull() } ?: SmsSource.REAL_SMS
                     serviceScope.launch {
-                        handleIncomingSms(senderNumber, messageBody)
+                        handleIncomingSms(senderNumber, messageBody, source)
                         processDueRetries()
                     }
                 }
@@ -100,7 +102,7 @@ class MonitoringForegroundService : Service() {
         }
     }
 
-    private suspend fun handleIncomingSms(senderNumber: String, messageBody: String) {
+    private suspend fun handleIncomingSms(senderNumber: String, messageBody: String, source: SmsSource) {
         val container = (application as MySmsCodeApplication).container
         val rules = container.senderRuleRepository.getAll()
         val robots = container.robotRepository.getAll()
@@ -115,7 +117,7 @@ class MonitoringForegroundService : Service() {
         val initialOutcome = outcomeUseCase.create(
             senderNumber = senderNumber,
             messageBody = messageBody,
-            source = SmsSource.REAL_SMS,
+            source = source,
             processingResult = processingResult,
             receivedAt = attemptedAt,
         )
@@ -226,6 +228,7 @@ class MonitoringForegroundService : Service() {
         private const val EXTRA_SENDER_NUMBER = "extra_sender_number"
         private const val EXTRA_MESSAGE_BODY = "extra_message_body"
         private const val EXTRA_ATTEMPT_ID = "extra_attempt_id"
+        private const val EXTRA_SMS_SOURCE = "extra_sms_source"
         private const val RETRY_POLL_INTERVAL_MS = 30_000L
 
         fun startMonitoring(context: Context) {
@@ -236,10 +239,19 @@ class MonitoringForegroundService : Service() {
         }
 
         fun enqueueIncomingSms(context: Context, senderNumber: String, messageBody: String) {
+            enqueueSms(context, senderNumber, messageBody, SmsSource.REAL_SMS)
+        }
+
+        fun enqueueSimulation(context: Context, senderNumber: String, messageBody: String) {
+            enqueueSms(context, senderNumber, messageBody, SmsSource.SIMULATION)
+        }
+
+        private fun enqueueSms(context: Context, senderNumber: String, messageBody: String, source: SmsSource) {
             val intent = Intent(context, MonitoringForegroundService::class.java).apply {
                 action = ACTION_PROCESS_SMS
                 putExtra(EXTRA_SENDER_NUMBER, senderNumber)
                 putExtra(EXTRA_MESSAGE_BODY, messageBody)
+                putExtra(EXTRA_SMS_SOURCE, source.name)
             }
             ContextCompat.startForegroundService(context, intent)
         }
