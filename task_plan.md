@@ -33,6 +33,7 @@ Build an Android app that monitors incoming SMS messages from configured sender 
 - The recent-history card and failed retry queue now support in-app status filters without requiring new database queries.
 - The workbench now includes a simulation injection entry point that feeds sender number and message body into the same service pipeline with source = `SIMULATION`.
 - A phase-one layered test report now records automated coverage, current testing gaps, and the next device-level verification steps.
+- A manual walkthrough checklist now documents the debug APK path and the recommended emulator/device validation sequence.
 - Simulation injection now triggers short follow-up refreshes so recent history and retry state update without a manual refresh tap.
 - The Android shell now includes a foreground service and SMS receiver pipeline that route incoming SMS through the tested domain logic, real webhook dispatching, manual retry execution, and automatic retry polling.
 

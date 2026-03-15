@@ -55,3 +55,4 @@
 - Added a simulation injection card to the workbench and routed injected messages through the same foreground-service pipeline with source = Simulation.
 - Added a simulation feedback plan so injection now updates the status bar immediately and auto-refreshes the workbench shortly after enqueueing a test SMS.
 - Wrote the first layered test report documenting current automated coverage, pending Android/device validation, and next end-to-end verification steps.
+- Built a fresh debug APK and wrote a manual walkthrough checklist covering simulation injection, configuration, retry verification, and remaining device-level validation items.
