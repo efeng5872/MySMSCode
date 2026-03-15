@@ -7,11 +7,11 @@ import java.time.format.DateTimeFormatter
 private val retryTimestampFormatter: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
 
 enum class HistoryFilterOption(val label: String) {
-    ALL("All"),
-    SUCCESS("Success"),
-    FAILED("Failed"),
-    NOT_MATCHED("Not Matched"),
-    CONFIGURATION_FAILED("Config Failed");
+    ALL("全部"),
+    SUCCESS("成功"),
+    FAILED("失败"),
+    NOT_MATCHED("未命中"),
+    CONFIGURATION_FAILED("配置异常");
 
     fun apply(records: List<SmsRecordPreview>): List<SmsRecordPreview> = when (this) {
         ALL -> records
@@ -23,10 +23,10 @@ enum class HistoryFilterOption(val label: String) {
 }
 
 enum class FailedRetryFilterOption(val label: String) {
-    ALL("All"),
-    SCHEDULED("Scheduled"),
-    EXHAUSTED("Exhausted"),
-    NON_RECOVERABLE("Non-Recoverable");
+    ALL("全部"),
+    SCHEDULED("已安排"),
+    EXHAUSTED("已耗尽"),
+    NON_RECOVERABLE("不可重试");
 
     fun apply(attempts: List<RetryableAttempt>): List<RetryableAttempt> = when (this) {
         ALL -> attempts
@@ -39,9 +39,9 @@ enum class FailedRetryFilterOption(val label: String) {
 fun RetryableAttempt.completedRetryCount(): Int = (attemptNumber - 1).coerceAtLeast(0)
 
 fun RetryableAttempt.autoRetryStatusLabel(): String = when {
-    nextRetryAt != null -> "Automatic retry scheduled"
-    !recoverable -> "Automatic retry disabled (non-recoverable)"
-    else -> "Automatic retries exhausted"
+    nextRetryAt != null -> "已安排自动重试"
+    !recoverable -> "不可自动重试"
+    else -> "自动重试次数已耗尽"
 }
 
 fun formatRetryTimestamp(
@@ -57,16 +57,16 @@ fun SmsRecordPreview.receivedAtLabel(zoneId: ZoneId = ZoneId.systemDefault()): S
     formatRetryTimestamp(timestampMillis = receivedAt, zoneId = zoneId)
 
 fun SmsRecordPreview.statusLabel(): String = when (status) {
-    "NOT_MATCHED" -> "Keyword not matched"
-    "PENDING_FORWARD" -> "Waiting to forward"
-    "CONFIGURATION_FAILED" -> "Configuration failed"
-    "SUCCESS" -> "Forwarded successfully"
-    "FAILED" -> "Forward failed"
+    "NOT_MATCHED" -> "关键字未命中"
+    "PENDING_FORWARD" -> "等待转发"
+    "CONFIGURATION_FAILED" -> "配置异常"
+    "SUCCESS" -> "转发成功"
+    "FAILED" -> "转发失败"
     else -> status
 }
 
 fun SmsRecordPreview.sourceLabel(): String = when (source) {
-    "REAL_SMS" -> "Incoming SMS"
-    "SIMULATION" -> "Simulation"
+    "REAL_SMS" -> "收到短信"
+    "SIMULATION" -> "模拟注入"
     else -> source
 }

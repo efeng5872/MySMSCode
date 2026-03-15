@@ -29,7 +29,7 @@ class RetryAttemptPresentationTest {
 
     @Test
     fun autoRetryStatusLabel_reportsScheduledRetryWhenNextWindowExists() {
-        assertEquals("Automatic retry scheduled", scheduledAttempt.autoRetryStatusLabel())
+        assertEquals("已安排自动重试", scheduledAttempt.autoRetryStatusLabel())
     }
 
     @Test
@@ -39,7 +39,7 @@ class RetryAttemptPresentationTest {
             nextRetryAt = null,
         )
 
-        assertEquals("Automatic retries exhausted", exhaustedAttempt.autoRetryStatusLabel())
+        assertEquals("自动重试次数已耗尽", exhaustedAttempt.autoRetryStatusLabel())
     }
 
     @Test
@@ -50,7 +50,7 @@ class RetryAttemptPresentationTest {
             nextRetryAt = null,
         )
 
-        assertEquals("Automatic retry disabled (non-recoverable)", nonRecoverableAttempt.autoRetryStatusLabel())
+        assertEquals("不可自动重试", nonRecoverableAttempt.autoRetryStatusLabel())
     }
 
     @Test

@@ -8,9 +8,9 @@ data class AppPermissionSnapshot(
 ) {
     val missingPermissions: List<String>
         get() = buildList {
-            if (!receiveSmsGranted) add("Receive SMS")
-            if (!readSmsGranted) add("Read SMS")
-            if (notificationPermissionRequired && !postNotificationsGranted) add("Post notifications")
+            if (!receiveSmsGranted) add("接收短信")
+            if (!readSmsGranted) add("读取短信")
+            if (notificationPermissionRequired && !postNotificationsGranted) add("通知权限")
         }
 
     val canStartMonitoring: Boolean
@@ -27,16 +27,16 @@ data class PermissionUiState(
 fun buildPermissionUiState(snapshot: AppPermissionSnapshot): PermissionUiState {
     return if (snapshot.canStartMonitoring) {
         PermissionUiState(
-            title = "Permissions ready",
-            message = "All required permissions are granted.",
-            actionLabel = "Permissions Ready",
+            title = "权限已就绪",
+            message = "所有必需权限均已授予。",
+            actionLabel = "权限已就绪",
             canStartMonitoring = true,
         )
     } else {
         PermissionUiState(
-            title = "Permissions required",
-            message = "Grant these permissions before monitoring can start: ${snapshot.missingPermissions.joinToString()}.",
-            actionLabel = "Grant Permissions",
+            title = "需要权限",
+            message = "启动监控前，请先授予以下权限：${snapshot.missingPermissions.joinToString()}。",
+            actionLabel = "申请权限",
             canStartMonitoring = false,
         )
     }

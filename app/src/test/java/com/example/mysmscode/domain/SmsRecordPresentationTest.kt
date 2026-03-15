@@ -24,14 +24,14 @@ class SmsRecordPresentationTest {
 
     @Test
     fun statusLabel_mapsKnownStatusesToReadableText() {
-        assertEquals("Configuration failed", preview.statusLabel())
-        assertEquals("Forwarded successfully", preview.copy(status = "SUCCESS").statusLabel())
-        assertEquals("Keyword not matched", preview.copy(status = "NOT_MATCHED").statusLabel())
+        assertEquals("配置异常", preview.statusLabel())
+        assertEquals("转发成功", preview.copy(status = "SUCCESS").statusLabel())
+        assertEquals("关键字未命中", preview.copy(status = "NOT_MATCHED").statusLabel())
     }
 
     @Test
     fun sourceLabel_mapsKnownSourcesToReadableText() {
-        assertEquals("Simulation", preview.sourceLabel())
-        assertEquals("Incoming SMS", preview.copy(source = "REAL_SMS").sourceLabel())
+        assertEquals("模拟注入", preview.sourceLabel())
+        assertEquals("收到短信", preview.copy(source = "REAL_SMS").sourceLabel())
     }
 }

@@ -16,12 +16,12 @@ fun validateSimulationInjection(
 ): SimulationInjectionValidation {
     val normalizedSenderNumber = senderNumber.trim()
     if (normalizedSenderNumber.isEmpty()) {
-        return SimulationInjectionValidation.Invalid("Sender number is required for simulation.")
+        return SimulationInjectionValidation.Invalid("模拟发送号码不能为空。")
     }
 
     val normalizedMessageBody = messageBody.trim()
     if (normalizedMessageBody.isEmpty()) {
-        return SimulationInjectionValidation.Invalid("Message body is required for simulation.")
+        return SimulationInjectionValidation.Invalid("模拟短信内容不能为空。")
     }
 
     return SimulationInjectionValidation.Valid(
@@ -38,6 +38,6 @@ data class SimulationFeedbackPlan(
 )
 
 fun buildSimulationFeedbackPlan(senderNumber: String): SimulationFeedbackPlan = SimulationFeedbackPlan(
-    initialStatusMessage = "Simulation enqueued for $senderNumber.",
+    initialStatusMessage = "已加入模拟短信，发送号码：$senderNumber。",
     refreshDelaysMillis = listOf(250L, 1500L),
 )

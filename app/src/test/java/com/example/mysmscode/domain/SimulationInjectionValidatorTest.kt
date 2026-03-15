@@ -26,7 +26,7 @@ class SimulationInjectionValidatorTest {
         )
 
         require(result is SimulationInjectionValidation.Invalid)
-        assertEquals("Sender number is required for simulation.", result.reason)
+        assertEquals("模拟发送号码不能为空。", result.reason)
     }
 
     @Test
@@ -37,6 +37,6 @@ class SimulationInjectionValidatorTest {
         )
 
         require(result is SimulationInjectionValidation.Invalid)
-        assertEquals("Message body is required for simulation.", result.reason)
+        assertEquals("模拟短信内容不能为空。", result.reason)
     }
 }

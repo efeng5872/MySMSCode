@@ -19,9 +19,9 @@ class PermissionStatusPresentationTest {
         )
 
         assertFalse(uiState.canStartMonitoring)
-        assertEquals("Permissions required", uiState.title)
-        assertTrue(uiState.message.contains("Receive SMS"))
-        assertEquals("Grant Permissions", uiState.actionLabel)
+        assertEquals("需要权限", uiState.title)
+        assertTrue(uiState.message.contains("接收短信"))
+        assertEquals("申请权限", uiState.actionLabel)
     }
 
     @Test
@@ -36,7 +36,7 @@ class PermissionStatusPresentationTest {
         )
 
         assertFalse(uiState.canStartMonitoring)
-        assertTrue(uiState.message.contains("Post notifications"))
+        assertTrue(uiState.message.contains("通知权限"))
     }
 
     @Test
@@ -51,8 +51,8 @@ class PermissionStatusPresentationTest {
         )
 
         assertTrue(uiState.canStartMonitoring)
-        assertEquals("Permissions ready", uiState.title)
-        assertEquals("All required permissions are granted.", uiState.message)
-        assertEquals("Permissions Ready", uiState.actionLabel)
+        assertEquals("权限已就绪", uiState.title)
+        assertEquals("所有必需权限均已授予。", uiState.message)
+        assertEquals("权限已就绪", uiState.actionLabel)
     }
 }

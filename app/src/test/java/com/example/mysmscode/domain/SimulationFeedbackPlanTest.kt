@@ -9,7 +9,7 @@ class SimulationFeedbackPlanTest {
     fun buildSimulationFeedback_returnsStatusAndRefreshSchedule() {
         val plan = buildSimulationFeedbackPlan("10690001")
 
-        assertEquals("Simulation enqueued for 10690001.", plan.initialStatusMessage)
+        assertEquals("已加入模拟短信，发送号码：10690001。", plan.initialStatusMessage)
         assertEquals(listOf(250L, 1500L), plan.refreshDelaysMillis)
     }
 }
