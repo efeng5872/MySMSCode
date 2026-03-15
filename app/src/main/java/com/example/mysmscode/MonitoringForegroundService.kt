@@ -104,6 +104,7 @@ class MonitoringForegroundService : Service() {
         val container = (application as MySmsCodeApplication).container
         val rules = container.senderRuleRepository.getAll()
         val robots = container.robotRepository.getAll()
+        val retryPolicyConfig = container.settingsRepository.getRetryPolicyConfig()
         val processingResult = processingUseCase.process(
             senderNumber = senderNumber,
             messageBody = messageBody,
@@ -133,7 +134,7 @@ class MonitoringForegroundService : Service() {
             val finalOutcome = if (initialOutcome.attempts.isEmpty()) {
                 initialOutcome
             } else {
-                finalizeOutcomeUseCase.finalize(initialOutcome, dispatchResults, attemptedAt)
+                finalizeOutcomeUseCase.finalize(initialOutcome, dispatchResults, attemptedAt, retryPolicyConfig)
             }
             container.processingRepository.saveOutcome(finalOutcome)
             notifyStatus("Processed ${finalOutcome.record.senderNumber} with ${finalOutcome.record.status.name}.")
@@ -162,6 +163,7 @@ class MonitoringForegroundService : Service() {
     }
 
     private suspend fun executeRetry(container: AppContainer, failedAttempt: RetryableAttempt) {
+        val retryPolicyConfig = container.settingsRepository.getRetryPolicyConfig()
         val robot = container.robotRepository.getAll().firstOrNull { it.id == failedAttempt.robotId && it.enabled }
         val dispatchResult = if (robot == null) {
             ForwardDispatchResult(
@@ -187,6 +189,7 @@ class MonitoringForegroundService : Service() {
             failedAttempt = failedAttempt,
             dispatchResult = dispatchResult,
             attemptedAt = System.currentTimeMillis(),
+            retryPolicyConfig = retryPolicyConfig,
         )
         container.processingRepository.saveRetryExecution(failedAttempt, execution)
         notifyStatus("Retried ${failedAttempt.senderNumber} via ${failedAttempt.robotType.name}: ${execution.nextAttempt.status.name}")

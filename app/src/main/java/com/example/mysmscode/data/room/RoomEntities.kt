@@ -1,12 +1,13 @@
 package com.example.mysmscode.data
 
 import androidx.room.ColumnInfo
+import androidx.room.Embedded
 import androidx.room.Entity
 import androidx.room.ForeignKey
 import androidx.room.Index
 import androidx.room.PrimaryKey
 import androidx.room.Relation
-import androidx.room.Embedded
+import com.example.mysmscode.domain.RetryPolicyConfig
 import com.example.mysmscode.domain.RobotEndpoint
 import com.example.mysmscode.domain.RobotType
 import com.example.mysmscode.domain.SenderRule
@@ -86,6 +87,32 @@ data class SenderRuleEntity(
             keywordBlob = KeywordListCodec.encode(domain.keywords),
             createdAt = domain.createdAt,
             updatedAt = domain.updatedAt,
+        )
+    }
+}
+
+@Entity(tableName = "retry_policy_config")
+data class RetryPolicyConfigEntity(
+    @PrimaryKey
+    val id: Int = 1,
+    @ColumnInfo(name = "first_retry_delay_seconds")
+    val firstRetryDelaySeconds: Int,
+    @ColumnInfo(name = "second_retry_delay_seconds")
+    val secondRetryDelaySeconds: Int,
+    @ColumnInfo(name = "third_retry_delay_seconds")
+    val thirdRetryDelaySeconds: Int,
+) {
+    fun toDomain(): RetryPolicyConfig = RetryPolicyConfig(
+        firstRetryDelaySeconds = firstRetryDelaySeconds,
+        secondRetryDelaySeconds = secondRetryDelaySeconds,
+        thirdRetryDelaySeconds = thirdRetryDelaySeconds,
+    )
+
+    companion object {
+        fun fromDomain(domain: RetryPolicyConfig): RetryPolicyConfigEntity = RetryPolicyConfigEntity(
+            firstRetryDelaySeconds = domain.firstRetryDelaySeconds,
+            secondRetryDelaySeconds = domain.secondRetryDelaySeconds,
+            thirdRetryDelaySeconds = domain.thirdRetryDelaySeconds,
         )
     }
 }

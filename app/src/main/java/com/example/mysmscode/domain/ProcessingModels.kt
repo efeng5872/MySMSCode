@@ -25,6 +25,20 @@ data class SenderRule(
     val updatedAt: Long = 0L,
 )
 
+data class RetryPolicyConfig(
+    val firstRetryDelaySeconds: Int,
+    val secondRetryDelaySeconds: Int,
+    val thirdRetryDelaySeconds: Int,
+) {
+    companion object {
+        fun default(): RetryPolicyConfig = RetryPolicyConfig(
+            firstRetryDelaySeconds = 10,
+            secondRetryDelaySeconds = 30,
+            thirdRetryDelaySeconds = 60,
+        )
+    }
+}
+
 enum class SmsProcessingStatus {
     NOT_MATCHED,
     PENDING_FORWARD,

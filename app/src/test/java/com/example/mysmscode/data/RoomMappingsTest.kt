@@ -1,5 +1,6 @@
-﻿package com.example.mysmscode.data
+package com.example.mysmscode.data
 
+import com.example.mysmscode.domain.RetryPolicyConfig
 import com.example.mysmscode.domain.RobotEndpoint
 import com.example.mysmscode.domain.RobotType
 import com.example.mysmscode.domain.SenderRule
@@ -73,5 +74,19 @@ class RoomMappingsTest {
 
         assertEquals(listOf(100L, 200L), domain.selectedRobotIds)
         assertEquals(listOf("code", "otp"), domain.keywords)
+    }
+
+    @Test
+    fun retryPolicyEntity_roundTripsDomainModel() {
+        val domain = RetryPolicyConfig(
+            firstRetryDelaySeconds = 10,
+            secondRetryDelaySeconds = 30,
+            thirdRetryDelaySeconds = 60,
+        )
+
+        val entity = RetryPolicyConfigEntity.fromDomain(domain)
+        val restored = entity.toDomain()
+
+        assertEquals(domain, restored)
     }
 }

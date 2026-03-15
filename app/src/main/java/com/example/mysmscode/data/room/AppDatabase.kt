@@ -35,6 +35,15 @@ interface SenderRuleDao {
 }
 
 @Dao
+interface RetryPolicyConfigDao {
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun save(config: RetryPolicyConfigEntity)
+
+    @Query("SELECT * FROM retry_policy_config WHERE id = 1 LIMIT 1")
+    suspend fun get(): RetryPolicyConfigEntity?
+}
+
+@Dao
 interface ProcessingDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertRecord(record: SmsRecordEntity): Long
@@ -143,15 +152,17 @@ interface ProcessingDao {
     entities = [
         RobotEndpointEntity::class,
         SenderRuleEntity::class,
+        RetryPolicyConfigEntity::class,
         SenderRuleRobotCrossRef::class,
         SmsRecordEntity::class,
         ForwardAttemptEntity::class,
     ],
-    version = 3,
+    version = 4,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {
     abstract fun robotEndpointDao(): RobotEndpointDao
     abstract fun senderRuleDao(): SenderRuleDao
+    abstract fun retryPolicyConfigDao(): RetryPolicyConfigDao
     abstract fun processingDao(): ProcessingDao
 }

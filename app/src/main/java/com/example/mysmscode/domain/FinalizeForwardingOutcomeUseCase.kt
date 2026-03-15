@@ -8,6 +8,7 @@ class FinalizeForwardingOutcomeUseCase(
         outcome: ProcessingOutcomeDraft,
         results: List<ForwardDispatchResult>,
         attemptedAt: Long,
+        retryPolicyConfig: RetryPolicyConfig = RetryPolicyConfig.default(),
     ): ProcessingOutcomeDraft {
         if (outcome.attempts.isEmpty()) {
             return outcome
@@ -21,6 +22,7 @@ class FinalizeForwardingOutcomeUseCase(
                     attemptNumber = attempt.attemptNumber,
                     recoverable = true,
                     now = attemptedAt,
+                    config = retryPolicyConfig,
                 )
                 attempt.copy(
                     status = ForwardAttemptStatus.FAILED,
@@ -34,6 +36,7 @@ class FinalizeForwardingOutcomeUseCase(
                         attemptNumber = attempt.attemptNumber,
                         recoverable = result.recoverable,
                         now = attemptedAt,
+                        config = retryPolicyConfig,
                     )
                 } else {
                     RetryScheduleDecision(recoverable = false, nextRetryAt = null)

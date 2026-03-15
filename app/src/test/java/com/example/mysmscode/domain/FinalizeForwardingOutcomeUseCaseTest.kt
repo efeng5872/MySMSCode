@@ -66,6 +66,6 @@ class FinalizeForwardingOutcomeUseCaseTest {
         assertTrue(finalized.record.failureReason!!.contains("timeout"))
         assertEquals(ForwardAttemptStatus.FAILED, finalized.attempts.single().status)
         assertTrue(finalized.attempts.single().recoverable)
-        assertEquals(70_000L, finalized.attempts.single().nextRetryAt)
+        assertEquals(20_000L, finalized.attempts.single().nextRetryAt)
     }
 }

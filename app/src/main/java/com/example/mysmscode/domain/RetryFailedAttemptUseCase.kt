@@ -8,6 +8,7 @@ class RetryFailedAttemptUseCase(
         failedAttempt: RetryableAttempt,
         dispatchResult: ForwardDispatchResult,
         attemptedAt: Long,
+        retryPolicyConfig: RetryPolicyConfig = RetryPolicyConfig.default(),
     ): RetryExecution {
         val isSuccess = dispatchResult.status == ForwardAttemptStatus.SUCCESS
         val retryDecision = if (isSuccess) {
@@ -17,6 +18,7 @@ class RetryFailedAttemptUseCase(
                 attemptNumber = failedAttempt.attemptNumber + 1,
                 recoverable = dispatchResult.recoverable,
                 now = attemptedAt,
+                config = retryPolicyConfig,
             )
         }
 

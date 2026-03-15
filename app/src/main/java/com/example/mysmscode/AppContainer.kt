@@ -6,6 +6,7 @@ import com.example.mysmscode.data.AppDatabase
 import com.example.mysmscode.data.RoomProcessingRepository
 import com.example.mysmscode.data.RoomRobotEndpointRepository
 import com.example.mysmscode.data.RoomSenderRuleRepository
+import com.example.mysmscode.data.RoomSettingsRepository
 
 class MySmsCodeApplication : Application() {
     val container: AppContainer by lazy {
@@ -28,6 +29,10 @@ class AppContainer(application: Application) {
 
     val senderRuleRepository: RoomSenderRuleRepository by lazy {
         RoomSenderRuleRepository(database, database.senderRuleDao())
+    }
+
+    val settingsRepository: RoomSettingsRepository by lazy {
+        RoomSettingsRepository(database.retryPolicyConfigDao())
     }
 
     val processingRepository: RoomProcessingRepository by lazy {

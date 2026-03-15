@@ -40,8 +40,12 @@
 - Extended Room queries and repositories to surface only the latest retryable failed attempts and to append retry attempts while recomputing record-level status from all latest channel results.
 - Added a foreground-service retry action so the app can re-dispatch a single failed channel attempt by id.
 - Added a failed retry queue card to the Compose workbench so users can inspect retryable failures and trigger manual retry.
-- Added `AutoRetryPolicyUseCase` and unit tests for 1 minute / 5 minute / 15 minute backoff plus retry exhaustion.
+- Added `AutoRetryPolicyUseCase` and unit tests for retry backoff scheduling and retry exhaustion.
 - Extended forward attempt models and persistence with `nextRetryAt` so failures can be scheduled rather than only recorded.
 - Updated finalize and retry use cases to assign retry windows automatically when dispatches fail.
 - Added Room queries for due retry attempts and updated the foreground service to poll and execute automatic retries while running.
-- Ran the full `testDebugUnitTest` suite successfully after the automatic retry scheduling changes.
+- Reworked automatic retry from fixed constants to a persisted `RetryPolicyConfig`, with defaults of 10 / 30 / 60 seconds for verification-code scenarios.
+- Added Room-backed settings persistence and a configuration card in the Compose workbench so retry intervals can be edited in-app.
+- Updated the foreground service to read the saved retry policy before scheduling or executing retries.
+- Extended the failed retry queue UI to show the next automatic retry timestamp for each retryable channel.
+- Ran the full `testDebugUnitTest` suite successfully after the configurable retry policy changes.

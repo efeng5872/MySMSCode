@@ -43,6 +43,7 @@ import androidx.compose.ui.unit.dp
 import com.example.mysmscode.data.RepositorySaveResult
 import com.example.mysmscode.domain.BuildConfigurationSummaryUseCase
 import com.example.mysmscode.domain.ConfigurationRuleSummary
+import com.example.mysmscode.domain.RetryPolicyConfig
 import com.example.mysmscode.domain.RetryableAttempt
 import com.example.mysmscode.domain.RobotEndpoint
 import com.example.mysmscode.domain.RobotType
@@ -75,6 +76,7 @@ private fun ConfigurationWorkbench(container: AppContainer) {
     var rules by remember { mutableStateOf(emptyList<SenderRule>()) }
     var recentRecords by remember { mutableStateOf(emptyList<SmsRecordPreview>()) }
     var failedAttempts by remember { mutableStateOf(emptyList<RetryableAttempt>()) }
+    var retryPolicyConfig by remember { mutableStateOf(RetryPolicyConfig.default()) }
     var isLoading by remember { mutableStateOf(true) }
     var statusMessage by remember { mutableStateOf("Room-backed configuration workbench ready.") }
 
@@ -88,16 +90,25 @@ private fun ConfigurationWorkbench(container: AppContainer) {
     var ruleEnabled by rememberSaveable { mutableStateOf(true) }
     val selectedRobotIds = remember { mutableStateListOf<Long>() }
 
+    var firstRetryDelayText by rememberSaveable { mutableStateOf("10") }
+    var secondRetryDelayText by rememberSaveable { mutableStateOf("30") }
+    var thirdRetryDelayText by rememberSaveable { mutableStateOf("60") }
+
     suspend fun reloadData() {
         isLoading = true
         val reloadedRobots = withContext(Dispatchers.IO) { container.robotRepository.getAll() }
         val reloadedRules = withContext(Dispatchers.IO) { container.senderRuleRepository.getAll() }
         val reloadedRecentRecords = withContext(Dispatchers.IO) { container.processingRepository.getRecentRecords(limit = 10) }
         val reloadedFailedAttempts = withContext(Dispatchers.IO) { container.processingRepository.getRetryableFailedAttempts(limit = 20) }
+        val reloadedRetryPolicyConfig = withContext(Dispatchers.IO) { container.settingsRepository.getRetryPolicyConfig() }
         robots = reloadedRobots
         rules = reloadedRules
         recentRecords = reloadedRecentRecords
         failedAttempts = reloadedFailedAttempts
+        retryPolicyConfig = reloadedRetryPolicyConfig
+        firstRetryDelayText = reloadedRetryPolicyConfig.firstRetryDelaySeconds.toString()
+        secondRetryDelayText = reloadedRetryPolicyConfig.secondRetryDelaySeconds.toString()
+        thirdRetryDelayText = reloadedRetryPolicyConfig.thirdRetryDelaySeconds.toString()
         isLoading = false
     }
 
@@ -135,12 +146,42 @@ private fun ConfigurationWorkbench(container: AppContainer) {
                 ruleCount = rules.size,
                 recentRecordCount = recentRecords.size,
                 failedRetryCount = failedAttempts.size,
+                retryPolicyConfig = retryPolicyConfig,
                 onStartMonitoring = {
                     MonitoringForegroundService.startMonitoring(context)
                     statusMessage = "Monitoring service start requested."
                 },
                 onRefresh = {
                     scope.launch { reloadData() }
+                },
+            )
+            RetryPolicyCard(
+                firstRetryDelayText = firstRetryDelayText,
+                onFirstRetryDelayChange = { firstRetryDelayText = it },
+                secondRetryDelayText = secondRetryDelayText,
+                onSecondRetryDelayChange = { secondRetryDelayText = it },
+                thirdRetryDelayText = thirdRetryDelayText,
+                onThirdRetryDelayChange = { thirdRetryDelayText = it },
+                onSave = {
+                    scope.launch {
+                        val firstDelay = firstRetryDelayText.toIntOrNull()
+                        val secondDelay = secondRetryDelayText.toIntOrNull()
+                        val thirdDelay = thirdRetryDelayText.toIntOrNull()
+                        if (firstDelay == null || secondDelay == null || thirdDelay == null || firstDelay <= 0 || secondDelay <= 0 || thirdDelay <= 0) {
+                            statusMessage = "Retry delays must be positive integers in seconds."
+                            return@launch
+                        }
+                        val config = RetryPolicyConfig(
+                            firstRetryDelaySeconds = firstDelay,
+                            secondRetryDelaySeconds = secondDelay,
+                            thirdRetryDelaySeconds = thirdDelay,
+                        )
+                        withContext(Dispatchers.IO) {
+                            container.settingsRepository.saveRetryPolicyConfig(config)
+                        }
+                        statusMessage = "Retry policy saved: ${firstDelay}s / ${secondDelay}s / ${thirdDelay}s"
+                        reloadData()
+                    }
                 },
             )
             RobotFormCard(
@@ -263,6 +304,7 @@ private fun StatusCard(
     ruleCount: Int,
     recentRecordCount: Int,
     failedRetryCount: Int,
+    retryPolicyConfig: RetryPolicyConfig,
     onStartMonitoring: () -> Unit,
     onRefresh: () -> Unit,
 ) {
@@ -280,6 +322,9 @@ private fun StatusCard(
                 Text("Configured sender rules: $ruleCount")
                 Text("Recent processed records: $recentRecordCount")
                 Text("Retryable failed attempts: $failedRetryCount")
+                Text(
+                    "Automatic retry policy: ${retryPolicyConfig.firstRetryDelaySeconds}s / ${retryPolicyConfig.secondRetryDelaySeconds}s / ${retryPolicyConfig.thirdRetryDelaySeconds}s"
+                )
             }
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Button(onClick = onStartMonitoring) {
@@ -288,6 +333,49 @@ private fun StatusCard(
                 Button(onClick = onRefresh) {
                     Text("Refresh")
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun RetryPolicyCard(
+    firstRetryDelayText: String,
+    onFirstRetryDelayChange: (String) -> Unit,
+    secondRetryDelayText: String,
+    onSecondRetryDelayChange: (String) -> Unit,
+    thirdRetryDelayText: String,
+    onThirdRetryDelayChange: (String) -> Unit,
+    onSave: () -> Unit,
+) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text("Automatic Retry Policy", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            Text(
+                "Verification-code friendly defaults are 10 / 30 / 60 seconds. The app will stop automatic retries after the third retry window.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            OutlinedTextField(
+                value = firstRetryDelayText,
+                onValueChange = onFirstRetryDelayChange,
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text("First retry delay (seconds)") },
+            )
+            OutlinedTextField(
+                value = secondRetryDelayText,
+                onValueChange = onSecondRetryDelayChange,
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text("Second retry delay (seconds)") },
+            )
+            OutlinedTextField(
+                value = thirdRetryDelayText,
+                onValueChange = onThirdRetryDelayChange,
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text("Third retry delay (seconds)") },
+            )
+            Button(onClick = onSave, modifier = Modifier.align(Alignment.End)) {
+                Text("Save Retry Policy")
             }
         }
     }
@@ -486,6 +574,11 @@ private fun FailedRetryCard(
                             text = "Last error: ${attempt.lastErrorMessage.orEmpty()}",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.error,
+                        )
+                        Text(
+                            text = "Next auto retry at: ${attempt.nextRetryAt?.toString() ?: "no automatic retry scheduled"}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                         Button(onClick = { onRetry(attempt.attemptId) }) {
                             Text("Retry This Channel")

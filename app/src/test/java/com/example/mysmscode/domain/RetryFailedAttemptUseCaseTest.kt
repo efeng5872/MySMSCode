@@ -25,7 +25,7 @@ class RetryFailedAttemptUseCaseTest {
                 attemptNumber = 1,
                 lastErrorMessage = "timeout",
                 recoverable = true,
-                nextRetryAt = 60_000L,
+                nextRetryAt = 10_000L,
             ),
             dispatchResult = ForwardDispatchResult(
                 robotId = 1L,
@@ -62,7 +62,7 @@ class RetryFailedAttemptUseCaseTest {
                 attemptNumber = 2,
                 lastErrorMessage = "connection reset",
                 recoverable = true,
-                nextRetryAt = 300_000L,
+                nextRetryAt = 30_000L,
             ),
             dispatchResult = ForwardDispatchResult(
                 robotId = 2L,
@@ -79,6 +79,6 @@ class RetryFailedAttemptUseCaseTest {
         assertTrue(execution.recordFailureReason!!.contains("timeout"))
         assertEquals(3, execution.nextAttempt.attemptNumber)
         assertTrue(execution.nextAttempt.recoverable)
-        assertEquals(1_020_000L, execution.nextAttempt.nextRetryAt)
+        assertEquals(180_000L, execution.nextAttempt.nextRetryAt)
     }
 }

@@ -6,15 +6,16 @@ class AutoRetryPolicyUseCase {
         attemptNumber: Int,
         recoverable: Boolean,
         now: Long,
+        config: RetryPolicyConfig,
     ): RetryScheduleDecision {
         if (!recoverable) {
             return RetryScheduleDecision(recoverable = false, nextRetryAt = null)
         }
 
         val delayMillis = when (attemptNumber) {
-            1 -> 60_000L
-            2 -> 5 * 60_000L
-            3 -> 15 * 60_000L
+            1 -> config.firstRetryDelaySeconds * 1000L
+            2 -> config.secondRetryDelaySeconds * 1000L
+            3 -> config.thirdRetryDelaySeconds * 1000L
             else -> null
         }
 
