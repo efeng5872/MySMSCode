@@ -1,6 +1,7 @@
 package com.example.mysmscode.data
 
 import androidx.room.withTransaction
+import com.example.mysmscode.DebugTraceLogger
 import com.example.mysmscode.domain.ForwardAttemptDraft
 import com.example.mysmscode.domain.ProcessingOutcomeDraft
 import com.example.mysmscode.domain.RetryExecution
@@ -10,6 +11,7 @@ import com.example.mysmscode.domain.RobotType
 import com.example.mysmscode.domain.SenderRule
 import com.example.mysmscode.domain.SmsRecordDraft
 import com.example.mysmscode.domain.SmsRecordPreview
+import com.example.mysmscode.domain.buildPersistenceTrace
 import kotlin.runCatching
 
 class RoomRobotEndpointRepository(
@@ -67,6 +69,7 @@ class RoomProcessingRepository(
                 processingDao.insertAttempts(attempts)
             }
         }
+        DebugTraceLogger.d(buildPersistenceTrace(outcome))
     }
 
     suspend fun saveRetryExecution(failedAttempt: RetryableAttempt, execution: RetryExecution) {

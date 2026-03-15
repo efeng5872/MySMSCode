@@ -56,3 +56,10 @@
 - Added a simulation feedback plan so injection now updates the status bar immediately and auto-refreshes the workbench shortly after enqueueing a test SMS.
 - Wrote the first layered test report documenting current automated coverage, pending Android/device validation, and next end-to-end verification steps.
 - Built a fresh debug APK and wrote a manual walkthrough checklist covering simulation injection, configuration, retry verification, and remaining device-level validation items.
+- Added a permission-status presentation model and unit tests covering missing SMS permission, missing notification permission, and pre-Tiramisu behavior.
+- Extended the Compose workbench with a runtime permission card, permission-state refresh, and start-monitoring gating so fresh installs cannot silently fail.
+- Added targeted debug trace logging around SMS receipt, service startup, processing decisions, persistence, and retry execution.
+- Fixed the Android 16 foreground-service startup crash by declaring `android.permission.FOREGROUND_SERVICE_DATA_SYNC` in the manifest.
+- Validated on the Medium_Phone_API_36.1 emulator that a fresh install shows the permission prompt flow, transitions to Permissions ready after approval, and enables the monitoring action.
+- Validated with a real emulator SMS that the runtime-permission flow now leads into the real receive -> process -> persist pipeline without manual adb permission grants.
+

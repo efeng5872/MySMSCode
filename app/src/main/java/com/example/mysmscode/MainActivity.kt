@@ -1,9 +1,14 @@
 package com.example.mysmscode
 
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -41,26 +46,30 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import com.example.mysmscode.data.RepositorySaveResult
+import com.example.mysmscode.domain.AppPermissionSnapshot
 import com.example.mysmscode.domain.BuildConfigurationSummaryUseCase
 import com.example.mysmscode.domain.ConfigurationRuleSummary
 import com.example.mysmscode.domain.FailedRetryFilterOption
 import com.example.mysmscode.domain.HistoryFilterOption
+import com.example.mysmscode.domain.PermissionUiState
 import com.example.mysmscode.domain.RetryPolicyConfig
-import com.example.mysmscode.domain.autoRetryStatusLabel
-import com.example.mysmscode.domain.completedRetryCount
-import com.example.mysmscode.domain.formatRetryTimestamp
-import com.example.mysmscode.domain.receivedAtLabel
-import com.example.mysmscode.domain.sourceLabel
-import com.example.mysmscode.domain.statusLabel
 import com.example.mysmscode.domain.RetryableAttempt
 import com.example.mysmscode.domain.RobotEndpoint
 import com.example.mysmscode.domain.RobotType
 import com.example.mysmscode.domain.SenderRule
 import com.example.mysmscode.domain.SimulationInjectionValidation
-import com.example.mysmscode.domain.buildSimulationFeedbackPlan
-import com.example.mysmscode.domain.validateSimulationInjection
 import com.example.mysmscode.domain.SmsRecordPreview
+import com.example.mysmscode.domain.autoRetryStatusLabel
+import com.example.mysmscode.domain.buildPermissionUiState
+import com.example.mysmscode.domain.buildSimulationFeedbackPlan
+import com.example.mysmscode.domain.completedRetryCount
+import com.example.mysmscode.domain.formatRetryTimestamp
+import com.example.mysmscode.domain.receivedAtLabel
+import com.example.mysmscode.domain.sourceLabel
+import com.example.mysmscode.domain.statusLabel
+import com.example.mysmscode.domain.validateSimulationInjection
 import com.example.mysmscode.ui.theme.MySMSCodeTheme
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -90,6 +99,7 @@ private fun ConfigurationWorkbench(container: AppContainer) {
     var recentRecords by remember { mutableStateOf(emptyList<SmsRecordPreview>()) }
     var failedAttempts by remember { mutableStateOf(emptyList<RetryableAttempt>()) }
     var retryPolicyConfig by remember { mutableStateOf(RetryPolicyConfig.default()) }
+    var permissionSnapshot by remember { mutableStateOf(readPermissionSnapshot(context)) }
     var isLoading by remember { mutableStateOf(true) }
     var statusMessage by remember { mutableStateOf("Room-backed configuration workbench ready.") }
 
@@ -111,6 +121,17 @@ private fun ConfigurationWorkbench(container: AppContainer) {
     var secondRetryDelayText by rememberSaveable { mutableStateOf("30") }
     var thirdRetryDelayText by rememberSaveable { mutableStateOf("60") }
 
+    val permissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestMultiplePermissions(),
+    ) {
+        permissionSnapshot = readPermissionSnapshot(context)
+        statusMessage = if (permissionSnapshot.canStartMonitoring) {
+            "All required permissions are now granted."
+        } else {
+            "Some permissions are still missing: ${permissionSnapshot.missingPermissions.joinToString()}"
+        }
+    }
+
     suspend fun reloadData() {
         isLoading = true
         val reloadedRobots = withContext(Dispatchers.IO) { container.robotRepository.getAll() }
@@ -123,6 +144,7 @@ private fun ConfigurationWorkbench(container: AppContainer) {
         recentRecords = reloadedRecentRecords
         failedAttempts = reloadedFailedAttempts
         retryPolicyConfig = reloadedRetryPolicyConfig
+        permissionSnapshot = readPermissionSnapshot(context)
         firstRetryDelayText = reloadedRetryPolicyConfig.firstRetryDelaySeconds.toString()
         secondRetryDelayText = reloadedRetryPolicyConfig.secondRetryDelaySeconds.toString()
         thirdRetryDelayText = reloadedRetryPolicyConfig.thirdRetryDelaySeconds.toString()
@@ -133,6 +155,7 @@ private fun ConfigurationWorkbench(container: AppContainer) {
         reloadData()
     }
 
+    val permissionUiState = remember(permissionSnapshot) { buildPermissionUiState(permissionSnapshot) }
     val summaries = remember(rules, robots) {
         summaryUseCase.build(rules = rules, robots = robots)
     }
@@ -159,6 +182,12 @@ private fun ConfigurationWorkbench(container: AppContainer) {
                 color = MaterialTheme.colorScheme.primary,
             )
 
+            PermissionCard(
+                uiState = permissionUiState,
+                onRequestPermissions = {
+                    permissionLauncher.launch(requiredPermissions(permissionSnapshot))
+                },
+            )
             StatusCard(
                 isLoading = isLoading,
                 robotCount = robots.size,
@@ -166,9 +195,14 @@ private fun ConfigurationWorkbench(container: AppContainer) {
                 recentRecordCount = filteredRecentRecords.size,
                 failedRetryCount = filteredFailedAttempts.size,
                 retryPolicyConfig = retryPolicyConfig,
+                canStartMonitoring = permissionUiState.canStartMonitoring,
                 onStartMonitoring = {
-                    MonitoringForegroundService.startMonitoring(context)
-                    statusMessage = "Monitoring service start requested."
+                    if (!permissionUiState.canStartMonitoring) {
+                        statusMessage = permissionUiState.message
+                    } else {
+                        MonitoringForegroundService.startMonitoring(context)
+                        statusMessage = "Monitoring service start requested."
+                    }
                 },
                 onRefresh = {
                     scope.launch { reloadData() }
@@ -352,6 +386,46 @@ private fun ConfigurationWorkbench(container: AppContainer) {
     }
 }
 
+private fun readPermissionSnapshot(context: android.content.Context): AppPermissionSnapshot {
+    val notificationRequired = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
+    fun isGranted(permission: String): Boolean {
+        return ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED
+    }
+    return AppPermissionSnapshot(
+        receiveSmsGranted = isGranted(Manifest.permission.RECEIVE_SMS),
+        readSmsGranted = isGranted(Manifest.permission.READ_SMS),
+        postNotificationsGranted = if (notificationRequired) isGranted(Manifest.permission.POST_NOTIFICATIONS) else true,
+        notificationPermissionRequired = notificationRequired,
+    )
+}
+
+private fun requiredPermissions(snapshot: AppPermissionSnapshot): Array<String> = buildList {
+    if (!snapshot.receiveSmsGranted) add(Manifest.permission.RECEIVE_SMS)
+    if (!snapshot.readSmsGranted) add(Manifest.permission.READ_SMS)
+    if (snapshot.notificationPermissionRequired && !snapshot.postNotificationsGranted) add(Manifest.permission.POST_NOTIFICATIONS)
+}.toTypedArray()
+
+@Composable
+private fun PermissionCard(
+    uiState: PermissionUiState,
+    onRequestPermissions: () -> Unit,
+) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text("Permission Status", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            Text(uiState.title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Medium)
+            Text(uiState.message, style = MaterialTheme.typography.bodyMedium)
+            Button(
+                onClick = onRequestPermissions,
+                enabled = !uiState.canStartMonitoring,
+                modifier = Modifier.align(Alignment.End),
+            ) {
+                Text(uiState.actionLabel)
+            }
+        }
+    }
+}
+
 @Composable
 private fun StatusCard(
     isLoading: Boolean,
@@ -360,29 +434,24 @@ private fun StatusCard(
     recentRecordCount: Int,
     failedRetryCount: Int,
     retryPolicyConfig: RetryPolicyConfig,
+    canStartMonitoring: Boolean,
     onStartMonitoring: () -> Unit,
     onRefresh: () -> Unit,
 ) {
     Card(modifier = Modifier.fillMaxWidth()) {
-        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(text = "Current Snapshot", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text("Current Snapshot", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
             if (isLoading) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    CircularProgressIndicator(modifier = Modifier.width(20.dp), strokeWidth = 2.dp)
-                    Spacer(modifier = Modifier.width(12.dp))
-                    Text("Loading persisted configuration...")
-                }
+                CircularProgressIndicator()
             } else {
                 Text("Configured robots: $robotCount")
                 Text("Configured sender rules: $ruleCount")
                 Text("Recent processed records: $recentRecordCount")
                 Text("Retryable failed attempts: $failedRetryCount")
-                Text(
-                    "Automatic retry policy: ${retryPolicyConfig.firstRetryDelaySeconds}s / ${retryPolicyConfig.secondRetryDelaySeconds}s / ${retryPolicyConfig.thirdRetryDelaySeconds}s"
-                )
+                Text("Automatic retry policy: ${retryPolicyConfig.firstRetryDelaySeconds}s / ${retryPolicyConfig.secondRetryDelaySeconds}s / ${retryPolicyConfig.thirdRetryDelaySeconds}s")
             }
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Button(onClick = onStartMonitoring) {
+                Button(onClick = onStartMonitoring, enabled = canStartMonitoring) {
                     Text("Start Monitoring")
                 }
                 Button(onClick = onRefresh) {
@@ -753,3 +822,4 @@ private fun FilterChipRow(
         }
     }
 }
+

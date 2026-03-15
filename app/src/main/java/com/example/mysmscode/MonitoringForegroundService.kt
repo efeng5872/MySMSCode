@@ -17,6 +17,7 @@ import com.example.mysmscode.domain.ProcessIncomingSmsUseCase
 import com.example.mysmscode.domain.RetryFailedAttemptUseCase
 import com.example.mysmscode.domain.RetryableAttempt
 import com.example.mysmscode.domain.SmsSource
+import com.example.mysmscode.domain.buildProcessingTrace
 import com.example.mysmscode.network.WebhookDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -44,11 +45,13 @@ class MonitoringForegroundService : Service() {
         super.onCreate()
         createNotificationChannel()
         startForeground(NOTIFICATION_ID, buildNotification("Monitoring skeleton active"))
+        DebugTraceLogger.d("service_created action=foreground_start")
         ensureRetryLoop()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         ensureRetryLoop()
+        DebugTraceLogger.d("service_start action=${intent?.action ?: "null"} startId=$startId")
         when (intent?.action) {
             ACTION_PROCESS_SMS -> {
                 val senderNumber = intent.getStringExtra(EXTRA_SENDER_NUMBER).orEmpty()
@@ -60,11 +63,14 @@ class MonitoringForegroundService : Service() {
                         handleIncomingSms(senderNumber, messageBody, source)
                         processDueRetries()
                     }
+                } else {
+                    DebugTraceLogger.w("service_start ignored blank payload for action=$ACTION_PROCESS_SMS")
                 }
             }
 
             ACTION_START_MONITORING -> {
                 startForeground(NOTIFICATION_ID, buildNotification("Monitoring started"))
+                DebugTraceLogger.d("service_monitoring_requested")
                 serviceScope.launch {
                     processDueRetries()
                 }
@@ -76,6 +82,8 @@ class MonitoringForegroundService : Service() {
                     serviceScope.launch {
                         handleRetryAttempt(attemptId)
                     }
+                } else {
+                    DebugTraceLogger.w("service_retry ignored invalid attemptId=$attemptId")
                 }
             }
         }
@@ -85,6 +93,7 @@ class MonitoringForegroundService : Service() {
     override fun onDestroy() {
         retryLoopJob?.cancel()
         serviceScope.cancel()
+        DebugTraceLogger.d("service_destroyed")
         super.onDestroy()
     }
 
@@ -113,6 +122,7 @@ class MonitoringForegroundService : Service() {
             rules = rules,
             robots = robots,
         )
+        DebugTraceLogger.d(buildProcessingTrace(source, processingResult))
         val attemptedAt = System.currentTimeMillis()
         val initialOutcome = outcomeUseCase.create(
             senderNumber = senderNumber,
@@ -140,6 +150,8 @@ class MonitoringForegroundService : Service() {
             }
             container.processingRepository.saveOutcome(finalOutcome)
             notifyStatus("Processed ${finalOutcome.record.senderNumber} with ${finalOutcome.record.status.name}.")
+        } else {
+            DebugTraceLogger.d("processing_result source=$source status=IGNORED attempts=0 sender=$senderNumber")
         }
     }
 
@@ -147,6 +159,7 @@ class MonitoringForegroundService : Service() {
         retryMutex.withLock {
             val container = (application as MySmsCodeApplication).container
             val failedAttempt = container.processingRepository.getRetryableAttemptById(attemptId) ?: run {
+                DebugTraceLogger.w("retry_lookup missing attemptId=$attemptId")
                 notifyStatus("Retry skipped because the failed attempt was not found.")
                 return
             }
@@ -158,6 +171,9 @@ class MonitoringForegroundService : Service() {
         retryMutex.withLock {
             val container = (application as MySmsCodeApplication).container
             val dueAttempts = container.processingRepository.getDueRetryableAttempts(System.currentTimeMillis(), limit = 20)
+            if (dueAttempts.isNotEmpty()) {
+                DebugTraceLogger.d("retry_due count=${dueAttempts.size}")
+            }
             dueAttempts.forEach { attempt ->
                 executeRetry(container, attempt)
             }
@@ -194,6 +210,9 @@ class MonitoringForegroundService : Service() {
             retryPolicyConfig = retryPolicyConfig,
         )
         container.processingRepository.saveRetryExecution(failedAttempt, execution)
+        DebugTraceLogger.d(
+            "retry_execution sender=${failedAttempt.senderNumber} channel=${failedAttempt.robotType.name} status=${execution.nextAttempt.status} attempt=${execution.nextAttempt.attemptNumber} nextRetryAt=${execution.nextAttempt.nextRetryAt ?: "none"}"
+        )
         notifyStatus("Retried ${failedAttempt.senderNumber} via ${failedAttempt.robotType.name}: ${execution.nextAttempt.status.name}")
     }
 
@@ -265,3 +284,4 @@ class MonitoringForegroundService : Service() {
         }
     }
 }
+
