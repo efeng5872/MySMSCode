@@ -9,7 +9,7 @@ Build an Android app that monitors incoming SMS messages from configured sender 
 | 1. Inspect current project state | completed | Android Studio template project confirmed |
 | 2. Confirm scope and constraints | completed | UI scope, service model, history, simulation, robot reuse, and edge rules confirmed |
 | 3. Write requirements/design/test docs | completed | Documents reviewed and finalized under `docs/` |
-| 4. Implement core feature with TDD | in_progress | Domain, repositories, Room persistence, configuration workbench, service/receiver pipeline, webhook dispatch, recent-history view, manual retry chain, configurable automatic retry scheduling, retry settings UI, and failed-retry observability improvements implemented |
+| 4. Implement core feature with TDD | in_progress | Domain, repositories, Room persistence, configuration workbench, service/receiver pipeline, webhook dispatch, recent-history view, manual retry chain, configurable automatic retry scheduling, retry settings UI, failed-retry observability improvements, and readable recent-history presentation implemented |
 | 5. Verify and summarize | pending | Unit tests and build verification |
 
 ## Decisions
@@ -38,7 +38,6 @@ Build an Android app that monitors incoming SMS messages from configured sender 
 - Feishu and WeCom robot APIs may have rate limits, security signatures, or IP restrictions depending on configuration.
 - Local command-line builds currently fall back when the Kotlin daemon cannot access the default user profile temp path.
 - Automatic retry polling currently depends on the foreground service remaining alive; there is not yet a separate scheduler or reboot recovery path.
-- Recent-history timestamps are still shown as raw epoch milliseconds; only the failed retry queue has readable local time formatting right now.
 
 ## Errors Encountered
 | Error | Attempt | Resolution |

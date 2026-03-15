@@ -47,6 +47,9 @@ import com.example.mysmscode.domain.RetryPolicyConfig
 import com.example.mysmscode.domain.autoRetryStatusLabel
 import com.example.mysmscode.domain.completedRetryCount
 import com.example.mysmscode.domain.formatRetryTimestamp
+import com.example.mysmscode.domain.receivedAtLabel
+import com.example.mysmscode.domain.sourceLabel
+import com.example.mysmscode.domain.statusLabel
 import com.example.mysmscode.domain.RetryableAttempt
 import com.example.mysmscode.domain.RobotEndpoint
 import com.example.mysmscode.domain.RobotType
@@ -614,7 +617,7 @@ private fun RecentHistoryCard(records: List<SmsRecordPreview>) {
                         Text(record.senderNumber, fontWeight = FontWeight.SemiBold)
                         Text(record.messageBody, style = MaterialTheme.typography.bodyMedium)
                         Text(
-                            text = "Status: ${record.status} | Source: ${record.source} | ReceivedAt: ${record.receivedAt}",
+                            text = "Status: ${record.statusLabel()} | Source: ${record.sourceLabel()} | Received at: ${record.receivedAtLabel()}",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
