@@ -76,6 +76,12 @@ class MonitoringForegroundService : Service() {
                 }
             }
 
+            ACTION_STOP_MONITORING -> {
+                DebugTraceLogger.d("service_monitoring_stop_requested")
+                stopForeground(STOP_FOREGROUND_REMOVE)
+                stopSelf()
+            }
+
             ACTION_RETRY_ATTEMPT -> {
                 val attemptId = intent.getLongExtra(EXTRA_ATTEMPT_ID, -1L)
                 if (attemptId > 0L) {
@@ -242,6 +248,7 @@ class MonitoringForegroundService : Service() {
         private const val CHANNEL_ID = "monitoring_channel"
         private const val NOTIFICATION_ID = 1001
         private const val ACTION_START_MONITORING = "com.example.mysmscode.action.START_MONITORING"
+        private const val ACTION_STOP_MONITORING = "com.example.mysmscode.action.STOP_MONITORING"
         private const val ACTION_PROCESS_SMS = "com.example.mysmscode.action.PROCESS_SMS"
         private const val ACTION_RETRY_ATTEMPT = "com.example.mysmscode.action.RETRY_ATTEMPT"
         private const val EXTRA_SENDER_NUMBER = "extra_sender_number"
@@ -253,6 +260,13 @@ class MonitoringForegroundService : Service() {
         fun startMonitoring(context: Context) {
             val intent = Intent(context, MonitoringForegroundService::class.java).apply {
                 action = ACTION_START_MONITORING
+            }
+            ContextCompat.startForegroundService(context, intent)
+        }
+
+        fun stopMonitoring(context: Context) {
+            val intent = Intent(context, MonitoringForegroundService::class.java).apply {
+                action = ACTION_STOP_MONITORING
             }
             ContextCompat.startForegroundService(context, intent)
         }
@@ -284,4 +298,3 @@ class MonitoringForegroundService : Service() {
         }
     }
 }
-

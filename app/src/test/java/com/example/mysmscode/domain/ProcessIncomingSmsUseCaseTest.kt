@@ -143,4 +143,87 @@ class ProcessIncomingSmsUseCaseTest {
         assertEquals(SmsProcessingStatus.CONFIGURATION_FAILED, result.record.status)
         assertFalse(result.record.failureReason.isNullOrBlank())
     }
+
+
+    @Test
+    fun senderNumberMatching_normalizesChinaCountryCodeVariants() {
+        val result = useCase.process(
+            senderNumber = "+8613608083211",
+            messageBody = "test verification code is 112244",
+            rules = listOf(
+                SenderRule(
+                    senderNumber = "13608083211",
+                    enabled = true,
+                    keywords = listOf("code"),
+                    selectedRobotIds = listOf(1L),
+                )
+            ),
+            robots = listOf(
+                RobotEndpoint(
+                    id = 1L,
+                    name = "WeCom Main",
+                    type = RobotType.WECOM,
+                    enabled = true,
+                    webhookUrl = "https://example.com/wecom",
+                )
+            ),
+        )
+
+        assertTrue(result is SmsProcessingResult.PendingForward)
+    }
+
+    @Test
+    fun senderNumberMatching_normalizesFormattingCharacters() {
+        val result = useCase.process(
+            senderNumber = "136-0808 3211",
+            messageBody = "test verification code is 112244",
+            rules = listOf(
+                SenderRule(
+                    senderNumber = "13608083211",
+                    enabled = true,
+                    keywords = listOf("code"),
+                    selectedRobotIds = listOf(1L),
+                )
+            ),
+            robots = listOf(
+                RobotEndpoint(
+                    id = 1L,
+                    name = "WeCom Main",
+                    type = RobotType.WECOM,
+                    enabled = true,
+                    webhookUrl = "https://example.com/wecom",
+                )
+            ),
+        )
+
+        assertTrue(result is SmsProcessingResult.PendingForward)
+    }
+
+    @Test
+    fun senderNumberMatching_doesNotMatchDifferentNumbersAfterNormalization() {
+        val result = useCase.process(
+            senderNumber = "+8613608083212",
+            messageBody = "test verification code is 112244",
+            rules = listOf(
+                SenderRule(
+                    senderNumber = "13608083211",
+                    enabled = true,
+                    keywords = listOf("code"),
+                    selectedRobotIds = listOf(1L),
+                )
+            ),
+            robots = listOf(
+                RobotEndpoint(
+                    id = 1L,
+                    name = "WeCom Main",
+                    type = RobotType.WECOM,
+                    enabled = true,
+                    webhookUrl = "https://example.com/wecom",
+                )
+            ),
+        )
+
+        assertTrue(result is SmsProcessingResult.Ignored)
+    }
+
 }

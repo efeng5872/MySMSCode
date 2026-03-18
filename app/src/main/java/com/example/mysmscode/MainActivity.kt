@@ -1,6 +1,8 @@
 package com.example.mysmscode
 
 import android.Manifest
+import android.app.ActivityManager
+import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
@@ -44,6 +46,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
@@ -53,6 +56,7 @@ import com.example.mysmscode.domain.BuildConfigurationSummaryUseCase
 import com.example.mysmscode.domain.ConfigurationRuleSummary
 import com.example.mysmscode.domain.FailedRetryFilterOption
 import com.example.mysmscode.domain.HistoryFilterOption
+import com.example.mysmscode.domain.MonitoringControlTransition
 import com.example.mysmscode.domain.PermissionUiState
 import com.example.mysmscode.domain.RetryPolicyConfig
 import com.example.mysmscode.domain.RetryableAttempt
@@ -61,15 +65,12 @@ import com.example.mysmscode.domain.RobotType
 import com.example.mysmscode.domain.SenderRule
 import com.example.mysmscode.domain.SimulationInjectionValidation
 import com.example.mysmscode.domain.SmsRecordPreview
-import com.example.mysmscode.domain.autoRetryStatusLabel
-import com.example.mysmscode.domain.buildPermissionUiState
-import com.example.mysmscode.domain.buildSimulationFeedbackPlan
+import com.example.mysmscode.domain.buildMonitoringControlState
+import com.example.mysmscode.domain.buildMonitoringDashboard
 import com.example.mysmscode.domain.completedRetryCount
 import com.example.mysmscode.domain.formatRetryTimestamp
+import com.example.mysmscode.domain.resolveMonitoringStatusMessage
 import com.example.mysmscode.domain.receivedAtLabel
-import com.example.mysmscode.domain.sourceLabel
-import com.example.mysmscode.domain.statusLabel
-import com.example.mysmscode.domain.validateSimulationInjection
 import com.example.mysmscode.ui.theme.MySMSCodeTheme
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -100,8 +101,11 @@ private fun ConfigurationWorkbench(container: AppContainer) {
     var failedAttempts by remember { mutableStateOf(emptyList<RetryableAttempt>()) }
     var retryPolicyConfig by remember { mutableStateOf(RetryPolicyConfig.default()) }
     var permissionSnapshot by remember { mutableStateOf(readPermissionSnapshot(context)) }
+    var monitoringServiceRunning by remember { mutableStateOf(readMonitoringServiceRunning(context)) }
+    var monitoringTransition by remember { mutableStateOf(MonitoringControlTransition.IDLE) }
     var isLoading by remember { mutableStateOf(true) }
-    var statusMessage by remember { mutableStateOf("基于 Room 的配置工作台已就绪。") }
+    var statusMessage by remember { mutableStateOf(context.getString(R.string.status_ready)) }
+    var currentPage by rememberSaveable { mutableStateOf(WorkbenchPage.HOME.name) }
 
     var robotName by rememberSaveable { mutableStateOf("") }
     var robotWebhook by rememberSaveable { mutableStateOf("") }
@@ -116,8 +120,6 @@ private fun ConfigurationWorkbench(container: AppContainer) {
     val selectedRobotIds = remember { mutableStateListOf<Long>() }
 
     var firstRetryDelayText by rememberSaveable { mutableStateOf("10") }
-    var historyFilter by rememberSaveable { mutableStateOf(HistoryFilterOption.ALL) }
-    var failedRetryFilter by rememberSaveable { mutableStateOf(FailedRetryFilterOption.ALL) }
     var secondRetryDelayText by rememberSaveable { mutableStateOf("30") }
     var thirdRetryDelayText by rememberSaveable { mutableStateOf("60") }
 
@@ -126,9 +128,12 @@ private fun ConfigurationWorkbench(container: AppContainer) {
     ) {
         permissionSnapshot = readPermissionSnapshot(context)
         statusMessage = if (permissionSnapshot.canStartMonitoring) {
-            "所需权限已全部授予。"
+            context.getString(R.string.status_permissions_granted)
         } else {
-            "仍有权限未授予：${permissionSnapshot.missingPermissions.joinToString()}"
+            context.getString(
+                R.string.status_permissions_missing,
+                missingPermissionLabels(context, permissionSnapshot).joinToString(),
+            )
         }
     }
 
@@ -145,22 +150,48 @@ private fun ConfigurationWorkbench(container: AppContainer) {
         failedAttempts = reloadedFailedAttempts
         retryPolicyConfig = reloadedRetryPolicyConfig
         permissionSnapshot = readPermissionSnapshot(context)
+        monitoringServiceRunning = readMonitoringServiceRunning(context)
         firstRetryDelayText = reloadedRetryPolicyConfig.firstRetryDelaySeconds.toString()
         secondRetryDelayText = reloadedRetryPolicyConfig.secondRetryDelaySeconds.toString()
         thirdRetryDelayText = reloadedRetryPolicyConfig.thirdRetryDelaySeconds.toString()
         isLoading = false
     }
 
+    suspend fun syncMonitoringState(expectedRunning: Boolean) {
+        repeat(8) {
+            val isRunning = readMonitoringServiceRunning(context)
+            monitoringServiceRunning = isRunning
+            if (isRunning == expectedRunning) {
+                return
+            }
+            delay(250L)
+        }
+        monitoringServiceRunning = readMonitoringServiceRunning(context)
+    }
+
     LaunchedEffect(Unit) {
         reloadData()
     }
 
-    val permissionUiState = remember(permissionSnapshot) { buildPermissionUiState(permissionSnapshot) }
+    val permissionUiState = remember(context, permissionSnapshot) {
+        buildPermissionUiState(context, permissionSnapshot)
+    }
     val summaries = remember(rules, robots) {
         summaryUseCase.build(rules = rules, robots = robots)
     }
-    val filteredRecentRecords = remember(recentRecords, historyFilter) { historyFilter.apply(recentRecords) }
-    val filteredFailedAttempts = remember(failedAttempts, failedRetryFilter) { failedRetryFilter.apply(failedAttempts) }
+    val monitoringControlState = remember(monitoringServiceRunning, monitoringTransition) {
+        buildMonitoringControlState(
+            isServiceRunning = monitoringServiceRunning,
+            transition = monitoringTransition,
+        )
+    }
+    val dashboard = remember(recentRecords, failedAttempts) {
+        buildMonitoringDashboard(
+            records = recentRecords,
+            failedAttempts = failedAttempts,
+            recentRecordLimit = HOME_RECENT_RECORD_LIMIT,
+        )
+    }
 
     Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
         Column(
@@ -171,10 +202,9 @@ private fun ConfigurationWorkbench(container: AppContainer) {
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            Text(
-                text = "短信转发工作台",
-                style = MaterialTheme.typography.headlineMedium,
-                fontWeight = FontWeight.Bold,
+            WorkbenchHeader(
+                currentPage = WorkbenchPage.valueOf(currentPage),
+                onNavigate = { page -> currentPage = page.name },
             )
             Text(
                 text = statusMessage,
@@ -182,211 +212,260 @@ private fun ConfigurationWorkbench(container: AppContainer) {
                 color = MaterialTheme.colorScheme.primary,
             )
 
-            PermissionCard(
-                uiState = permissionUiState,
-                onRequestPermissions = {
-                    permissionLauncher.launch(requiredPermissions(permissionSnapshot))
-                },
-            )
-            StatusCard(
-                isLoading = isLoading,
-                robotCount = robots.size,
-                ruleCount = rules.size,
-                recentRecordCount = filteredRecentRecords.size,
-                failedRetryCount = filteredFailedAttempts.size,
-                retryPolicyConfig = retryPolicyConfig,
-                canStartMonitoring = permissionUiState.canStartMonitoring,
-                onStartMonitoring = {
-                    if (!permissionUiState.canStartMonitoring) {
-                        statusMessage = permissionUiState.message
-                    } else {
-                        MonitoringForegroundService.startMonitoring(context)
-                        statusMessage = "已请求启动监控服务。"
-                    }
-                },
-                onRefresh = {
-                    scope.launch { reloadData() }
-                },
-            )
-            RetryPolicyCard(
-                firstRetryDelayText = firstRetryDelayText,
-                onFirstRetryDelayChange = { firstRetryDelayText = it },
-                secondRetryDelayText = secondRetryDelayText,
-                onSecondRetryDelayChange = { secondRetryDelayText = it },
-                thirdRetryDelayText = thirdRetryDelayText,
-                onThirdRetryDelayChange = { thirdRetryDelayText = it },
-                onSave = {
-                    scope.launch {
-                        val firstDelay = firstRetryDelayText.toIntOrNull()
-                        val secondDelay = secondRetryDelayText.toIntOrNull()
-                        val thirdDelay = thirdRetryDelayText.toIntOrNull()
-                        if (firstDelay == null || secondDelay == null || thirdDelay == null || firstDelay <= 0 || secondDelay <= 0 || thirdDelay <= 0) {
-                            statusMessage = "重试间隔必须是大于 0 的秒数整数。"
-                            return@launch
-                        }
-                        val config = RetryPolicyConfig(
-                            firstRetryDelaySeconds = firstDelay,
-                            secondRetryDelaySeconds = secondDelay,
-                            thirdRetryDelaySeconds = thirdDelay,
-                        )
-                        withContext(Dispatchers.IO) {
-                            container.settingsRepository.saveRetryPolicyConfig(config)
-                        }
-                        statusMessage = "自动重试策略已保存：${firstDelay}s / ${secondDelay}s / ${thirdDelay}s"
-                        reloadData()
-                    }
-                },
-            )
-            RobotFormCard(
-                robotName = robotName,
-                onRobotNameChange = { robotName = it },
-                robotWebhook = robotWebhook,
-                onRobotWebhookChange = { robotWebhook = it },
-                robotEnabled = robotEnabled,
-                onRobotEnabledChange = { robotEnabled = it },
-                robotType = robotType,
-                onRobotTypeChange = { robotType = it },
-                onSave = {
-                    scope.launch {
-                        val now = System.currentTimeMillis()
-                        val result = withContext(Dispatchers.IO) {
-                            container.robotRepository.save(
-                                RobotEndpoint(
-                                    name = robotName.trim(),
-                                    type = robotType,
-                                    enabled = robotEnabled,
-                                    webhookUrl = robotWebhook.trim(),
-                                    createdAt = now,
-                                    updatedAt = now,
-                                )
-                            )
-                        }
-                        when (result) {
-                            is RepositorySaveResult.Success -> {
-                                robotName = ""
-                                robotWebhook = ""
-                                robotEnabled = true
-                                robotType = RobotType.FEISHU
-                                statusMessage = "目标机器人已保存：${result.value.name}"
-                                reloadData()
-                            }
-
-                            RepositorySaveResult.DuplicateName -> {
-                                statusMessage = "目标机器人名称已存在，请使用唯一名称。"
-                            }
-
-                            else -> {
-                                statusMessage = "目标机器人保存失败。"
-                            }
-                        }
-                    }
-                }
-            )
-            RuleFormCard(
-                senderNumber = senderNumber,
-                onSenderNumberChange = { senderNumber = it },
-                keywordText = keywordText,
-                onKeywordTextChange = { keywordText = it },
-                ruleEnabled = ruleEnabled,
-                onRuleEnabledChange = { ruleEnabled = it },
-                robots = robots,
-                selectedRobotIds = selectedRobotIds,
-                onToggleRobot = { robotId, checked ->
-                    if (checked) {
-                        if (!selectedRobotIds.contains(robotId)) {
-                            selectedRobotIds.add(robotId)
-                        }
-                    } else {
-                        selectedRobotIds.remove(robotId)
-                    }
-                },
-                onSave = {
-                    scope.launch {
-                        val now = System.currentTimeMillis()
-                        val keywords = keywordText.split(',').map { it.trim() }.filter { it.isNotEmpty() }
-                        val result = withContext(Dispatchers.IO) {
-                            container.senderRuleRepository.save(
-                                SenderRule(
-                                    senderNumber = senderNumber.trim(),
-                                    enabled = ruleEnabled,
-                                    keywords = keywords,
-                                    selectedRobotIds = selectedRobotIds.toList(),
-                                    createdAt = now,
-                                    updatedAt = now,
-                                )
-                            )
-                        }
-                        when (result) {
-                            is RepositorySaveResult.Success -> {
-                                senderNumber = ""
-                                keywordText = ""
-                                ruleEnabled = true
-                                selectedRobotIds.clear()
-                                statusMessage = "号码规则已保存：${result.value.senderNumber}"
-                                reloadData()
-                            }
-
-                            RepositorySaveResult.DuplicateSenderNumber -> {
-                                statusMessage = "该发送号码已经存在规则。"
-                            }
-
-                            else -> {
-                                statusMessage = "号码规则保存失败。"
-                            }
-                        }
-                    }
-                }
-            )
-            SimulationInjectionCard(
-                senderNumber = simulationSenderNumber,
-                onSenderNumberChange = { simulationSenderNumber = it },
-                messageBody = simulationMessageBody,
-                onMessageBodyChange = { simulationMessageBody = it },
-                onInject = {
-                    when (val validation = validateSimulationInjection(simulationSenderNumber, simulationMessageBody)) {
-                        is SimulationInjectionValidation.Invalid -> {
-                            statusMessage = validation.reason
-                        }
-                        is SimulationInjectionValidation.Valid -> {
-                            val feedbackPlan = buildSimulationFeedbackPlan(validation.request.senderNumber)
-                            MonitoringForegroundService.enqueueSimulation(
-                                context = context,
-                                senderNumber = validation.request.senderNumber,
-                                messageBody = validation.request.messageBody,
-                            )
-                            simulationSenderNumber = ""
-                            simulationMessageBody = ""
-                            statusMessage = feedbackPlan.initialStatusMessage
+            when (WorkbenchPage.valueOf(currentPage)) {
+                WorkbenchPage.HOME -> {
+                    MonitoringStatusCard(
+                        isLoading = isLoading,
+                        controlState = monitoringControlState,
+                        permissionUiState = permissionUiState,
+                        onToggleMonitoring = {
                             scope.launch {
-                                feedbackPlan.refreshDelaysMillis.forEach { refreshDelay ->
-                                    delay(refreshDelay)
-                                    reloadData()
+                                when {
+                                    monitoringServiceRunning -> {
+                                        monitoringTransition = MonitoringControlTransition.STOPPING
+                                        statusMessage = context.getString(R.string.status_monitoring_stopping)
+                                        MonitoringForegroundService.stopMonitoring(context)
+                                        syncMonitoringState(expectedRunning = false)
+                                        statusMessage = resolveMonitoringStatusMessage(
+                                            transition = MonitoringControlTransition.STOPPING,
+                                            isServiceRunning = monitoringServiceRunning,
+                                            requestMessage = context.getString(R.string.status_monitoring_stopping),
+                                            completedMessage = context.getString(R.string.status_monitoring_stopped),
+                                            fallbackMessage = context.getString(R.string.status_monitoring_stop_failed),
+                                        )
+                                        monitoringTransition = MonitoringControlTransition.IDLE
+                                        reloadData()
+                                    }
+
+                                    !permissionUiState.canStartMonitoring -> {
+                                        statusMessage = permissionUiState.message
+                                    }
+
+                                    else -> {
+                                        monitoringTransition = MonitoringControlTransition.STARTING
+                                        statusMessage = context.getString(R.string.status_monitoring_requested)
+                                        MonitoringForegroundService.startMonitoring(context)
+                                        syncMonitoringState(expectedRunning = true)
+                                        statusMessage = resolveMonitoringStatusMessage(
+                                            transition = MonitoringControlTransition.STARTING,
+                                            isServiceRunning = monitoringServiceRunning,
+                                            requestMessage = context.getString(R.string.status_monitoring_requested),
+                                            completedMessage = context.getString(R.string.status_monitoring_started),
+                                            fallbackMessage = context.getString(R.string.status_monitoring_start_failed),
+                                        )
+                                        monitoringTransition = MonitoringControlTransition.IDLE
+                                        reloadData()
+                                    }
+                                }
+                            }
+                        },
+                        onRefresh = {
+                            scope.launch { reloadData() }
+                        },
+                    )
+                    FailureAlertCard(
+                        isLoading = isLoading,
+                        dashboard = dashboard,
+                        onRetry = { attemptId ->
+                            MonitoringForegroundService.retryFailedAttempt(context, attemptId)
+                            statusMessage = context.getString(R.string.status_retry_requested, attemptId)
+                        },
+                    )
+                    DashboardRecentHistoryCard(
+                        isLoading = isLoading,
+                        records = dashboard.recentRecords,
+                    )
+                }
+
+                WorkbenchPage.CONFIG -> {
+                    PermissionCard(
+                        uiState = permissionUiState,
+                        onRequestPermissions = {
+                            permissionLauncher.launch(requiredPermissions(permissionSnapshot))
+                        },
+                    )
+                    RetryPolicyCard(
+                        firstRetryDelayText = firstRetryDelayText,
+                        onFirstRetryDelayChange = { firstRetryDelayText = it },
+                        secondRetryDelayText = secondRetryDelayText,
+                        onSecondRetryDelayChange = { secondRetryDelayText = it },
+                        thirdRetryDelayText = thirdRetryDelayText,
+                        onThirdRetryDelayChange = { thirdRetryDelayText = it },
+                        onSave = {
+                            scope.launch {
+                                val firstDelay = firstRetryDelayText.toIntOrNull()
+                                val secondDelay = secondRetryDelayText.toIntOrNull()
+                                val thirdDelay = thirdRetryDelayText.toIntOrNull()
+                                if (firstDelay == null || secondDelay == null || thirdDelay == null || firstDelay <= 0 || secondDelay <= 0 || thirdDelay <= 0) {
+                                    statusMessage = context.getString(R.string.status_retry_policy_invalid)
+                                    return@launch
+                                }
+                                val config = RetryPolicyConfig(
+                                    firstRetryDelaySeconds = firstDelay,
+                                    secondRetryDelaySeconds = secondDelay,
+                                    thirdRetryDelaySeconds = thirdDelay,
+                                )
+                                withContext(Dispatchers.IO) {
+                                    container.settingsRepository.saveRetryPolicyConfig(config)
+                                }
+                                statusMessage = context.getString(
+                                    R.string.status_retry_policy_saved,
+                                    firstDelay,
+                                    secondDelay,
+                                    thirdDelay,
+                                )
+                                reloadData()
+                            }
+                        },
+                    )
+                    RobotFormCard(
+                        robotName = robotName,
+                        onRobotNameChange = { robotName = it },
+                        robotWebhook = robotWebhook,
+                        onRobotWebhookChange = { robotWebhook = it },
+                        robotEnabled = robotEnabled,
+                        onRobotEnabledChange = { robotEnabled = it },
+                        robotType = robotType,
+                        onRobotTypeChange = { robotType = it },
+                        onSave = {
+                            scope.launch {
+                                val now = System.currentTimeMillis()
+                                val result = withContext(Dispatchers.IO) {
+                                    container.robotRepository.save(
+                                        RobotEndpoint(
+                                            name = robotName.trim(),
+                                            type = robotType,
+                                            enabled = robotEnabled,
+                                            webhookUrl = robotWebhook.trim(),
+                                            createdAt = now,
+                                            updatedAt = now,
+                                        )
+                                    )
+                                }
+                                when (result) {
+                                    is RepositorySaveResult.Success -> {
+                                        robotName = ""
+                                        robotWebhook = ""
+                                        robotEnabled = true
+                                        robotType = RobotType.FEISHU
+                                        statusMessage = context.getString(R.string.status_robot_saved, result.value.name)
+                                        reloadData()
+                                    }
+
+                                    RepositorySaveResult.DuplicateName -> {
+                                        statusMessage = context.getString(R.string.status_robot_duplicate)
+                                    }
+
+                                    else -> {
+                                        statusMessage = context.getString(R.string.status_robot_save_failed)
+                                    }
                                 }
                             }
                         }
-                    }
-                },
-            )
-            ConfigurationSummaryCard(robots = robots, summaries = summaries)
-            FailedRetryCard(
-                attempts = filteredFailedAttempts,
-                selectedFilter = failedRetryFilter,
-                onFilterSelected = { failedRetryFilter = it },
-                onRetry = { attemptId ->
-                    MonitoringForegroundService.retryFailedAttempt(context, attemptId)
-                    statusMessage = "已请求重试失败记录 #$attemptId。"
-                },
-            )
-            RecentHistoryCard(
-                records = filteredRecentRecords,
-                selectedFilter = historyFilter,
-                onFilterSelected = { historyFilter = it },
-            )
+                    )
+                    RuleFormCard(
+                        senderNumber = senderNumber,
+                        onSenderNumberChange = { senderNumber = it },
+                        keywordText = keywordText,
+                        onKeywordTextChange = { keywordText = it },
+                        ruleEnabled = ruleEnabled,
+                        onRuleEnabledChange = { ruleEnabled = it },
+                        robots = robots,
+                        selectedRobotIds = selectedRobotIds,
+                        onToggleRobot = { robotId, checked ->
+                            if (checked) {
+                                if (!selectedRobotIds.contains(robotId)) {
+                                    selectedRobotIds.add(robotId)
+                                }
+                            } else {
+                                selectedRobotIds.remove(robotId)
+                            }
+                        },
+                        onSave = {
+                            scope.launch {
+                                val now = System.currentTimeMillis()
+                                val keywords = keywordText.split(',').map { it.trim() }.filter { it.isNotEmpty() }
+                                val result = withContext(Dispatchers.IO) {
+                                    container.senderRuleRepository.save(
+                                        SenderRule(
+                                            senderNumber = senderNumber.trim(),
+                                            enabled = ruleEnabled,
+                                            keywords = keywords,
+                                            selectedRobotIds = selectedRobotIds.toList(),
+                                            createdAt = now,
+                                            updatedAt = now,
+                                        )
+                                    )
+                                }
+                                when (result) {
+                                    is RepositorySaveResult.Success -> {
+                                        senderNumber = ""
+                                        keywordText = ""
+                                        ruleEnabled = true
+                                        selectedRobotIds.clear()
+                                        statusMessage = context.getString(R.string.status_rule_saved, result.value.senderNumber)
+                                        reloadData()
+                                    }
+
+                                    RepositorySaveResult.DuplicateSenderNumber -> {
+                                        statusMessage = context.getString(R.string.status_rule_duplicate)
+                                    }
+
+                                    else -> {
+                                        statusMessage = context.getString(R.string.status_rule_save_failed)
+                                    }
+                                }
+                            }
+                        }
+                    )
+                    ConfigurationSummaryCard(robots = robots, summaries = summaries)
+                    SimulationInjectionCard(
+                        senderNumber = simulationSenderNumber,
+                        onSenderNumberChange = { simulationSenderNumber = it },
+                        messageBody = simulationMessageBody,
+                        onMessageBodyChange = { simulationMessageBody = it },
+                        onInject = {
+                            when (val validation = validateSimulationInjectionInput(context, simulationSenderNumber, simulationMessageBody)) {
+                                is SimulationInjectionValidation.Invalid -> {
+                                    statusMessage = validation.reason
+                                }
+                                is SimulationInjectionValidation.Valid -> {
+                                    MonitoringForegroundService.enqueueSimulation(
+                                        context = context,
+                                        senderNumber = validation.request.senderNumber,
+                                        messageBody = validation.request.messageBody,
+                                    )
+                                    simulationSenderNumber = ""
+                                    simulationMessageBody = ""
+                                    statusMessage = context.getString(
+                                        R.string.status_simulation_enqueued,
+                                        validation.request.senderNumber,
+                                    )
+                                    scope.launch {
+                                        listOf(250L, 1500L).forEach { refreshDelay ->
+                                            delay(refreshDelay)
+                                            reloadData()
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                    )
+                }
+            }
         }
     }
 }
 
-private fun readPermissionSnapshot(context: android.content.Context): AppPermissionSnapshot {
+private fun readMonitoringServiceRunning(context: Context): Boolean {
+    val activityManager = context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+    @Suppress("DEPRECATION")
+    return activityManager.getRunningServices(Int.MAX_VALUE).any { serviceInfo ->
+        serviceInfo.service.className == MonitoringForegroundService::class.java.name && serviceInfo.foreground
+    }
+}
+
+private fun readPermissionSnapshot(context: Context): AppPermissionSnapshot {
     val notificationRequired = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
     fun isGranted(permission: String): Boolean {
         return ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED
@@ -404,7 +483,6 @@ private fun requiredPermissions(snapshot: AppPermissionSnapshot): Array<String> 
     if (!snapshot.readSmsGranted) add(Manifest.permission.READ_SMS)
     if (snapshot.notificationPermissionRequired && !snapshot.postNotificationsGranted) add(Manifest.permission.POST_NOTIFICATIONS)
 }.toTypedArray()
-
 @Composable
 private fun PermissionCard(
     uiState: PermissionUiState,
@@ -412,7 +490,11 @@ private fun PermissionCard(
 ) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text("权限状态", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            Text(
+                stringResource(R.string.permission_card_title),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+            )
             Text(uiState.title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Medium)
             Text(uiState.message, style = MaterialTheme.typography.bodyMedium)
             Button(
@@ -440,22 +522,33 @@ private fun StatusCard(
 ) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text("当前概览", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            Text(
+                stringResource(R.string.snapshot_title),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+            )
             if (isLoading) {
                 CircularProgressIndicator()
             } else {
-                Text("已配置目标机器人：$robotCount")
-                Text("已配置号码规则：$ruleCount")
-                Text("最近处理记录：$recentRecordCount")
-                Text("可重试失败记录：$failedRetryCount")
-                Text("自动重试策略：${retryPolicyConfig.firstRetryDelaySeconds}s / ${retryPolicyConfig.secondRetryDelaySeconds}s / ${retryPolicyConfig.thirdRetryDelaySeconds}s")
+                Text(stringResource(R.string.snapshot_robots, robotCount))
+                Text(stringResource(R.string.snapshot_rules, ruleCount))
+                Text(stringResource(R.string.snapshot_records, recentRecordCount))
+                Text(stringResource(R.string.snapshot_failed, failedRetryCount))
+                Text(
+                    stringResource(
+                        R.string.snapshot_retry_policy,
+                        retryPolicyConfig.firstRetryDelaySeconds,
+                        retryPolicyConfig.secondRetryDelaySeconds,
+                        retryPolicyConfig.thirdRetryDelaySeconds,
+                    ),
+                )
             }
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Button(onClick = onStartMonitoring, enabled = canStartMonitoring) {
-                    Text("启动监控")
+                    Text(stringResource(R.string.action_start_monitoring))
                 }
                 Button(onClick = onRefresh) {
-                    Text("刷新")
+                    Text(stringResource(R.string.action_refresh))
                 }
             }
         }
@@ -474,9 +567,13 @@ private fun RetryPolicyCard(
 ) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text("自动重试策略", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
             Text(
-                "验证码场景推荐默认值 10 / 30 / 60 秒。第三次自动重试窗口结束后，系统会停止自动重试。",
+                stringResource(R.string.retry_policy_title),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text(
+                stringResource(R.string.retry_policy_description),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -484,22 +581,22 @@ private fun RetryPolicyCard(
                 value = firstRetryDelayText,
                 onValueChange = onFirstRetryDelayChange,
                 modifier = Modifier.fillMaxWidth(),
-                label = { Text("第一次重试延迟（秒）") },
+                label = { Text(stringResource(R.string.retry_policy_first_delay)) },
             )
             OutlinedTextField(
                 value = secondRetryDelayText,
                 onValueChange = onSecondRetryDelayChange,
                 modifier = Modifier.fillMaxWidth(),
-                label = { Text("第二次重试延迟（秒）") },
+                label = { Text(stringResource(R.string.retry_policy_second_delay)) },
             )
             OutlinedTextField(
                 value = thirdRetryDelayText,
                 onValueChange = onThirdRetryDelayChange,
                 modifier = Modifier.fillMaxWidth(),
-                label = { Text("第三次重试延迟（秒）") },
+                label = { Text(stringResource(R.string.retry_policy_third_delay)) },
             )
             Button(onClick = onSave, modifier = Modifier.align(Alignment.End)) {
-                Text("保存重试策略")
+                Text(stringResource(R.string.retry_policy_save))
             }
         }
     }
@@ -519,43 +616,47 @@ private fun RobotFormCard(
 ) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text("新增目标机器人", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            Text(
+                stringResource(R.string.robot_form_title),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+            )
             OutlinedTextField(
                 value = robotName,
                 onValueChange = onRobotNameChange,
                 modifier = Modifier.fillMaxWidth(),
-                label = { Text("目标机器人名称") },
-                placeholder = { Text("运维飞书群") },
+                label = { Text(stringResource(R.string.robot_name_label)) },
+                placeholder = { Text(stringResource(R.string.robot_name_placeholder)) },
             )
             OutlinedTextField(
                 value = robotWebhook,
                 onValueChange = onRobotWebhookChange,
                 modifier = Modifier.fillMaxWidth(),
-                label = { Text("Webhook 地址") },
+                label = { Text(stringResource(R.string.robot_webhook_label)) },
                 placeholder = { Text("https://...") },
             )
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text("类型")
+                Text(stringResource(R.string.robot_type_label))
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     RadioButton(selected = robotType == RobotType.FEISHU, onClick = { onRobotTypeChange(RobotType.FEISHU) })
-                    Text("飞书")
+                    Text(stringResource(R.string.robot_type_feishu))
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     RadioButton(selected = robotType == RobotType.WECOM, onClick = { onRobotTypeChange(RobotType.WECOM) })
-                    Text("企业微信")
+                    Text(stringResource(R.string.robot_type_wecom))
                 }
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Switch(checked = robotEnabled, onCheckedChange = onRobotEnabledChange)
                 Spacer(modifier = Modifier.width(12.dp))
-                Text(if (robotEnabled) "目标机器人已启用" else "目标机器人已停用")
+                Text(stringResource(if (robotEnabled) R.string.robot_enabled else R.string.robot_disabled))
             }
             Button(
                 onClick = onSave,
                 enabled = robotName.isNotBlank() && robotWebhook.isNotBlank(),
                 modifier = Modifier.align(Alignment.End)
             ) {
-                Text("保存目标机器人")
+                Text(stringResource(R.string.robot_save))
             }
         }
     }
@@ -574,32 +675,42 @@ private fun RuleFormCard(
     onToggleRobot: (Long, Boolean) -> Unit,
     onSave: () -> Unit,
 ) {
+    val context = LocalContext.current
+
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text("新增号码规则", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            Text(
+                stringResource(R.string.rule_form_title),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+            )
             OutlinedTextField(
                 value = senderNumber,
                 onValueChange = onSenderNumberChange,
                 modifier = Modifier.fillMaxWidth(),
-                label = { Text("发送号码") },
+                label = { Text(stringResource(R.string.rule_sender_label)) },
                 placeholder = { Text("10690001") },
             )
             OutlinedTextField(
                 value = keywordText,
                 onValueChange = onKeywordTextChange,
                 modifier = Modifier.fillMaxWidth(),
-                label = { Text("关键字") },
+                label = { Text(stringResource(R.string.rule_keyword_label)) },
                 placeholder = { Text("code, otp, verification") },
-                supportingText = { Text("使用逗号分隔。系统会按不区分大小写的包含匹配规则处理。") },
+                supportingText = { Text(stringResource(R.string.rule_keyword_support)) },
             )
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Switch(checked = ruleEnabled, onCheckedChange = onRuleEnabledChange)
                 Spacer(modifier = Modifier.width(12.dp))
-                Text(if (ruleEnabled) "规则已启用" else "规则已停用")
+                Text(stringResource(if (ruleEnabled) R.string.rule_enabled else R.string.rule_disabled))
             }
-            Text("选择目标机器人", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Medium)
+            Text(
+                stringResource(R.string.rule_select_robot),
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.Medium,
+            )
             if (robots.isEmpty()) {
-                Text("请先创建至少一个目标机器人，再新增号码规则。")
+                Text(stringResource(R.string.rule_no_robot))
             } else {
                 robots.forEach { robot ->
                     Row(
@@ -620,7 +731,7 @@ private fun RuleFormCard(
                         Column {
                             Text(robot.name)
                             Text(
-                                text = "${robot.type.name} - ${if (robot.enabled) "已启用" else "已停用"}",
+                                text = "${robotTypeLabel(context, robot.type)} - ${shortEnabledStateLabel(context, robot.enabled)}",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
@@ -633,7 +744,7 @@ private fun RuleFormCard(
                 enabled = senderNumber.isNotBlank() && keywordText.isNotBlank(),
                 modifier = Modifier.align(Alignment.End)
             ) {
-                Text("保存规则")
+                Text(stringResource(R.string.rule_save))
             }
         }
     }
@@ -649,9 +760,13 @@ private fun SimulationInjectionCard(
 ) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text("模拟短信注入", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
             Text(
-                "把一条测试短信注入到与真实短信相同的前台服务处理链路中。该记录会以来源 Simulation 保存。",
+                stringResource(R.string.simulation_title),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text(
+                stringResource(R.string.simulation_description),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -659,14 +774,14 @@ private fun SimulationInjectionCard(
                 value = senderNumber,
                 onValueChange = onSenderNumberChange,
                 modifier = Modifier.fillMaxWidth(),
-                label = { Text("模拟发送号码") },
+                label = { Text(stringResource(R.string.simulation_sender_label)) },
                 placeholder = { Text("10690001") },
             )
             OutlinedTextField(
                 value = messageBody,
                 onValueChange = onMessageBodyChange,
                 modifier = Modifier.fillMaxWidth(),
-                label = { Text("模拟短信内容") },
+                label = { Text(stringResource(R.string.simulation_body_label)) },
                 placeholder = { Text("Your verification code is 123456") },
             )
             Button(
@@ -674,7 +789,7 @@ private fun SimulationInjectionCard(
                 enabled = senderNumber.isNotBlank() && messageBody.isNotBlank(),
                 modifier = Modifier.align(Alignment.End),
             ) {
-                Text("执行模拟注入")
+                Text(stringResource(R.string.simulation_inject))
             }
         }
     }
@@ -685,28 +800,45 @@ private fun ConfigurationSummaryCard(
     robots: List<RobotEndpoint>,
     summaries: List<ConfigurationRuleSummary>,
 ) {
+    val context = LocalContext.current
+
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text("配置摘要", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-            Text("目标机器人", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Medium)
+            Text(
+                stringResource(R.string.configuration_summary_title),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text(
+                stringResource(R.string.configuration_summary_robots),
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.Medium,
+            )
             if (robots.isEmpty()) {
-                Text("还没有保存任何目标机器人。")
+                Text(stringResource(R.string.configuration_summary_no_robots))
             } else {
                 robots.forEach { robot ->
-                    Text("- ${robot.name} (${robot.type.name}) - ${if (robot.enabled) "已启用" else "已停用"}")
+                    Text("- ${robot.name} (${robotTypeLabel(context, robot.type)}) - ${shortEnabledStateLabel(context, robot.enabled)}")
                 }
             }
             HorizontalDivider()
-            Text("号码规则", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Medium)
+            Text(
+                stringResource(R.string.configuration_summary_sender_rules),
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.Medium,
+            )
             if (summaries.isEmpty()) {
-                Text("还没有保存任何号码规则。")
+                Text(stringResource(R.string.configuration_summary_no_rules))
             } else {
                 summaries.forEach { summary ->
                     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Text(summary.senderNumber, fontWeight = FontWeight.SemiBold)
-                        Text("关键字：${summary.keywordPreview}")
-                        Text("目标机器人：${summary.robotNames.joinToString()}")
-                        Text(if (summary.enabled) "规则已启用" else "规则已停用", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(stringResource(R.string.configuration_summary_keyword_line, summary.keywordPreview))
+                        Text(stringResource(R.string.configuration_summary_robot_line, summary.robotNames.joinToString()))
+                        Text(
+                            stringResource(if (summary.enabled) R.string.rule_enabled else R.string.rule_disabled),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
                         HorizontalDivider(modifier = Modifier.padding(top = 8.dp))
                     }
                 }
@@ -722,43 +854,59 @@ private fun FailedRetryCard(
     onFilterSelected: (FailedRetryFilterOption) -> Unit,
     onRetry: (Long) -> Unit,
 ) {
+    val context = LocalContext.current
+
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text("失败重试队列", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            Text(
+                stringResource(R.string.failed_retry_title),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+            )
             FilterChipRow(
-                labels = FailedRetryFilterOption.entries.map { it.label },
+                labels = FailedRetryFilterOption.entries.map { failedRetryFilterLabel(context, it) },
                 selectedIndex = FailedRetryFilterOption.entries.indexOf(selectedFilter),
                 onSelected = { onFilterSelected(FailedRetryFilterOption.entries[it]) },
             )
             if (attempts.isEmpty()) {
-                Text("当前没有可重试的失败记录。")
+                Text(stringResource(R.string.failed_retry_empty))
             } else {
                 attempts.forEachIndexed { index, attempt ->
                     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Text(attempt.senderNumber, fontWeight = FontWeight.SemiBold)
                         Text(attempt.messageBody, style = MaterialTheme.typography.bodyMedium)
                         Text(
-                            text = "目标机器人：${attempt.robotName} (${attempt.robotType.name}) | 尝试次数：${attempt.attemptNumber} | 已完成重试：${attempt.completedRetryCount()}",
+                            text = stringResource(
+                                R.string.failed_retry_robot_line,
+                                attempt.robotName,
+                                robotTypeLabel(context, attempt.robotType),
+                                attempt.attemptNumber,
+                                attempt.completedRetryCount(),
+                            ),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                         Text(
-                            text = "最近错误：${attempt.lastErrorMessage.orEmpty()}",
+                            text = stringResource(R.string.failed_retry_error, attempt.lastErrorMessage.orEmpty()),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.error,
                         )
                         Text(
-                            text = "重试状态：${attempt.autoRetryStatusLabel()}",
+                            text = stringResource(R.string.failed_retry_status, retryStatusLabel(context, attempt)),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                         Text(
-                            text = "下次自动重试时间：${attempt.nextRetryAt?.let(::formatRetryTimestamp) ?: "未安排自动重试"}",
+                            text = stringResource(
+                                R.string.failed_retry_next_time,
+                                attempt.nextRetryAt?.let(::formatRetryTimestamp)
+                                    ?: stringResource(R.string.failed_retry_no_schedule),
+                            ),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                         Button(onClick = { onRetry(attempt.attemptId) }) {
-                            Text("重试此渠道")
+                            Text(stringResource(R.string.action_retry_channel))
                         }
                     }
                     if (index != attempts.lastIndex) {
@@ -776,23 +924,34 @@ private fun RecentHistoryCard(
     selectedFilter: HistoryFilterOption,
     onFilterSelected: (HistoryFilterOption) -> Unit,
 ) {
+    val context = LocalContext.current
+
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text("最近记录", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            Text(
+                stringResource(R.string.recent_history_title),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+            )
             FilterChipRow(
-                labels = HistoryFilterOption.entries.map { it.label },
+                labels = HistoryFilterOption.entries.map { historyFilterLabel(context, it) },
                 selectedIndex = HistoryFilterOption.entries.indexOf(selectedFilter),
                 onSelected = { onFilterSelected(HistoryFilterOption.entries[it]) },
             )
             if (records.isEmpty()) {
-                Text("当前还没有处理过的短信记录。")
+                Text(stringResource(R.string.recent_history_empty))
             } else {
                 records.forEachIndexed { index, record ->
                     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Text(record.senderNumber, fontWeight = FontWeight.SemiBold)
                         Text(record.messageBody, style = MaterialTheme.typography.bodyMedium)
                         Text(
-                            text = "状态：${record.statusLabel()} | 来源：${record.sourceLabel()} | 接收时间：${record.receivedAtLabel()}",
+                            text = stringResource(
+                                R.string.record_summary_line,
+                                smsStatusLabel(context, record),
+                                smsSourceLabel(context, record),
+                                record.receivedAtLabel(),
+                            ),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -822,4 +981,9 @@ private fun FilterChipRow(
         }
     }
 }
+
+
+
+
+
 

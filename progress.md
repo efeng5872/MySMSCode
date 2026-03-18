@@ -66,3 +66,9 @@
 - Verified the real Feishu end-to-end path on the emulator and later corrected the transport-only success assumption by parsing Feishu business response bodies.
 - Added a webhook dispatcher regression test proving Feishu HTTP `200` plus an error body now returns `FAILED` instead of a false `SUCCESS`.
 - Revalidated the live Feishu path with the required group keyword by sending `test verification code is 778899` and confirmed the newest persisted attempt recorded `response_code = 200` and `response_message = success`.
+
+## 2026-03-18
+- 引入 `libphonenumber`，将发送号码匹配升级为基于 E.164 的正式国际号码标准化，默认地区为 `CN`。
+- 新增 `PhoneNumberNormalizer` 及对应单元测试，覆盖中国号码、本地号与国际号等场景。
+- 在模拟器 `Medium_Phone_API_36.1` 上完成国际号码标准化回归：规则保存 `13608083211`，来信发送方使用 `+8613608083211`，系统成功命中并完成双通道转发。
+- 重写阶段二测试报告为 UTF-8 中文版本，并补充 2026-03-18 的国际号码标准化验证证据。

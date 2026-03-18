@@ -2,7 +2,9 @@ package com.example.mysmscode.domain
 
 import java.util.Locale
 
-class ProcessIncomingSmsUseCase {
+class ProcessIncomingSmsUseCase(
+    private val phoneNumberNormalizer: PhoneNumberNormalizer = PhoneNumberNormalizer(),
+) {
 
     fun process(
         senderNumber: String,
@@ -10,7 +12,9 @@ class ProcessIncomingSmsUseCase {
         rules: List<SenderRule>,
         robots: List<RobotEndpoint>,
     ): SmsProcessingResult {
-        val rule = rules.firstOrNull { it.senderNumber == senderNumber } ?: return SmsProcessingResult.Ignored
+        val normalizedIncomingSender = phoneNumberNormalizer.normalize(senderNumber)
+        val rule = rules.firstOrNull { phoneNumberNormalizer.normalize(it.senderNumber) == normalizedIncomingSender }
+            ?: return SmsProcessingResult.Ignored
         if (!rule.enabled) {
             return SmsProcessingResult.Ignored
         }
@@ -65,4 +69,5 @@ class ProcessIncomingSmsUseCase {
             normalizedBody.contains(keyword.lowercase(Locale.ROOT))
         }
     }
+
 }
