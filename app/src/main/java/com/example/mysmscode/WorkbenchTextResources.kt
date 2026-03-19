@@ -10,6 +10,7 @@ import com.example.mysmscode.domain.RetryableAttempt
 import com.example.mysmscode.domain.RobotType
 import com.example.mysmscode.domain.SimulationInjectionValidation
 import com.example.mysmscode.domain.SmsRecordPreview
+import com.example.mysmscode.domain.validateSimulationInjection
 
 fun buildPermissionUiState(
     context: Context,
@@ -48,25 +49,9 @@ fun validateSimulationInjectionInput(
     senderNumber: String,
     messageBody: String,
 ): SimulationInjectionValidation {
-    val normalizedSenderNumber = senderNumber.trim()
-    if (normalizedSenderNumber.isEmpty()) {
-        return SimulationInjectionValidation.Invalid(
-            context.getString(R.string.simulation_sender_required),
-        )
-    }
-
-    val normalizedMessageBody = messageBody.trim()
-    if (normalizedMessageBody.isEmpty()) {
-        return SimulationInjectionValidation.Invalid(
-            context.getString(R.string.simulation_body_required),
-        )
-    }
-
-    return SimulationInjectionValidation.Valid(
-        com.example.mysmscode.domain.SimulationInjectionRequest(
-            senderNumber = normalizedSenderNumber,
-            messageBody = normalizedMessageBody,
-        ),
+    return validateSimulationInjection(
+        senderNumber = senderNumber,
+        messageBody = messageBody,
     )
 }
 

@@ -26,7 +26,7 @@ class SimulationInjectionValidatorTest {
         )
 
         require(result is SimulationInjectionValidation.Invalid)
-        assertEquals("Ä£Äâ·¢ËÍºÅÂë²»ÄÜÎª¿Õ¡£", result.reason)
+        assertEquals("æ¨¡æ‹Ÿå‘é€å·ç ä¸èƒ½ä¸ºç©ºã€‚", result.reason)
     }
 
     @Test
@@ -37,6 +37,6 @@ class SimulationInjectionValidatorTest {
         )
 
         require(result is SimulationInjectionValidation.Invalid)
-        assertEquals("Ä£Äâ¶ÌĞÅÄÚÈİ²»ÄÜÎª¿Õ¡£", result.reason)
+        assertEquals("æ¨¡æ‹ŸçŸ­ä¿¡å†…å®¹ä¸èƒ½ä¸ºç©ºã€‚", result.reason)
     }
 }

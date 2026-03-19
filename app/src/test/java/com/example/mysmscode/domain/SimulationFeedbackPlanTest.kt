@@ -9,7 +9,8 @@ class SimulationFeedbackPlanTest {
     fun buildSimulationFeedback_returnsStatusAndRefreshSchedule() {
         val plan = buildSimulationFeedbackPlan("10690001")
 
-        assertEquals("ÒÑ¼ÓÈëÄ£Äâ¶ÌĞÅ£¬·¢ËÍºÅÂë£º10690001¡£", plan.initialStatusMessage)
-        assertEquals(listOf(250L, 1500L), plan.refreshDelaysMillis)
+        assertEquals("å·²æäº¤æ¨¡æ‹Ÿè¯·æ±‚ï¼Œå‘é€å·ç ï¼š10690001ã€‚", plan.submittedStatusMessage)
+        assertEquals(listOf(250L, 500L, 1000L, 1500L, 2000L, 3000L), plan.refreshDelaysMillis)
+        assertEquals(true, plan.finalRefreshBeforeTimeout)
     }
 }

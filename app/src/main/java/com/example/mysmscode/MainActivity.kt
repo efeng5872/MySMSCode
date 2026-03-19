@@ -65,13 +65,19 @@ import com.example.mysmscode.domain.RetryableAttempt
 import com.example.mysmscode.domain.RobotEndpoint
 import com.example.mysmscode.domain.RobotType
 import com.example.mysmscode.domain.SenderRule
+import com.example.mysmscode.domain.SimulationInjectionRequest
 import com.example.mysmscode.domain.SimulationInjectionValidation
+import com.example.mysmscode.domain.buildSimulationFeedbackPlan
 import com.example.mysmscode.domain.SmsRecordPreview
 import com.example.mysmscode.domain.buildMonitoringControlState
 import com.example.mysmscode.domain.buildMonitoringDashboard
 import com.example.mysmscode.domain.completedRetryCount
 import com.example.mysmscode.domain.resolveMonitoringStatusMessage
 import com.example.mysmscode.domain.canDeleteRobot
+import com.example.mysmscode.domain.buildSimulationRuleMismatchMessage
+import com.example.mysmscode.domain.buildDebugSimulationQuickAction
+import com.example.mysmscode.domain.findInjectedSimulationRecord
+import com.example.mysmscode.domain.findMatchingSimulationRule
 import com.example.mysmscode.domain.shouldAutoRequestPermissions
 import com.example.mysmscode.domain.buildRuleSenderNumber
 import com.example.mysmscode.domain.defaultCountryOption
@@ -112,10 +118,15 @@ private fun ConfigurationWorkbench(container: AppContainer) {
     var monitoringServiceRunning by remember { mutableStateOf(readMonitoringServiceRunning(context)) }
     var monitoringTransition by remember { mutableStateOf(MonitoringControlTransition.IDLE) }
     var isLoading by remember { mutableStateOf(true) }
-    var statusMessage by remember { mutableStateOf(context.getString(R.string.status_ready)) }
+    var statusMessage by remember { mutableStateOf("") }
     var currentPage by rememberSaveable { mutableStateOf(WorkbenchPage.HOME.name) }
     var hasAutoRequestedPermissions by rememberSaveable { mutableStateOf(false) }
     val scrollState = rememberScrollState()
+    val debugSimulationQuickAction = remember {
+        buildDebugSimulationQuickAction(
+            isDebug = (context.applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0,
+        )
+    }
 
     var robotName by rememberSaveable { mutableStateOf("") }
     var robotWebhook by rememberSaveable { mutableStateOf("") }
@@ -193,6 +204,63 @@ private fun ConfigurationWorkbench(container: AppContainer) {
             delay(250L)
         }
         monitoringServiceRunning = readMonitoringServiceRunning(context)
+    }
+
+    suspend fun performSimulationInjection(request: SimulationInjectionRequest) {
+        val matchedRule = findMatchingSimulationRule(
+            senderNumber = request.senderNumber,
+            rules = rules,
+        )
+        if (matchedRule == null) {
+            statusMessage = buildSimulationRuleMismatchMessage()
+            return
+        }
+        val feedbackPlan = buildSimulationFeedbackPlan(request.senderNumber)
+        val submittedAt = System.currentTimeMillis()
+        statusMessage = feedbackPlan.submittedStatusMessage
+        MonitoringForegroundService.enqueueSimulation(
+            context = context,
+            senderNumber = request.senderNumber,
+            messageBody = request.messageBody,
+        )
+        if (feedbackPlan.navigateToHomeRecentRecords) {
+            currentPage = WorkbenchPage.HOME.name
+            scrollState.animateScrollTo(0)
+        }
+        delay(feedbackPlan.submittedStatusVisibleDelayMillis)
+        statusMessage = feedbackPlan.matchedRuleStatusMessage
+        var recordWritten = false
+        for (delayMillis in feedbackPlan.refreshDelaysMillis) {
+            delay(delayMillis)
+            reloadData()
+            val injectedRecord = findInjectedSimulationRecord(
+                records = recentRecords,
+                senderNumber = request.senderNumber,
+                messageBody = request.messageBody,
+                submittedAt = submittedAt,
+            )
+            if (injectedRecord != null) {
+                statusMessage = feedbackPlan.completedStatusMessage
+                recordWritten = true
+                break
+            }
+        }
+        if (!recordWritten && feedbackPlan.finalRefreshBeforeTimeout) {
+            reloadData()
+            val injectedRecord = findInjectedSimulationRecord(
+                records = recentRecords,
+                senderNumber = request.senderNumber,
+                messageBody = request.messageBody,
+                submittedAt = submittedAt,
+            )
+            if (injectedRecord != null) {
+                statusMessage = feedbackPlan.completedStatusMessage
+                recordWritten = true
+            }
+        }
+        if (!recordWritten) {
+            statusMessage = feedbackPlan.timeoutStatusMessage
+        }
     }
 
     fun launchPermissionRequest() {
@@ -305,11 +373,13 @@ private fun ConfigurationWorkbench(container: AppContainer) {
                 currentPage = WorkbenchPage.valueOf(currentPage),
                 onNavigate = { page -> currentPage = page.name },
             )
-            Text(
-                text = statusMessage,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.primary,
-            )
+            if (statusMessage.isNotBlank()) {
+                Text(
+                    text = statusMessage,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
 
             when (WorkbenchPage.valueOf(currentPage)) {
                 WorkbenchPage.HOME -> {
@@ -650,6 +720,7 @@ private fun ConfigurationWorkbench(container: AppContainer) {
                             onSenderNumberChange = { simulationSenderNumber = it },
                             messageBody = simulationMessageBody,
                             onMessageBodyChange = { simulationMessageBody = it },
+                            debugQuickAction = debugSimulationQuickAction,
                             showHeader = false,
                             onInject = {
                                 scope.launch {
@@ -663,18 +734,17 @@ private fun ConfigurationWorkbench(container: AppContainer) {
                                         }
 
                                         is SimulationInjectionValidation.Valid -> {
-                                            MonitoringForegroundService.enqueueSimulation(
-                                                context = context,
-                                                senderNumber = validation.request.senderNumber,
-                                                messageBody = validation.request.messageBody,
-                                            )
-                                            statusMessage = context.getString(
-                                                R.string.status_simulation_enqueued,
-                                                validation.request.senderNumber,
-                                            )
-                                            delay(400L)
-                                            reloadData()
+                                            performSimulationInjection(validation.request)
                                         }
+                                    }
+                                }
+                            },
+                            onInjectSample = {
+                                scope.launch {
+                                    debugSimulationQuickAction?.let { quickAction ->
+                                        simulationSenderNumber = quickAction.request.senderNumber
+                                        simulationMessageBody = quickAction.request.messageBody
+                                        performSimulationInjection(quickAction.request)
                                     }
                                 }
                             },
@@ -997,8 +1067,10 @@ private fun SimulationInjectionCard(
     onSenderNumberChange: (String) -> Unit,
     messageBody: String,
     onMessageBodyChange: (String) -> Unit,
+    debugQuickAction: com.example.mysmscode.domain.DebugSimulationQuickAction? = null,
     showHeader: Boolean = true,
     onInject: () -> Unit,
+    onInjectSample: () -> Unit = {},
 ) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -1028,12 +1100,23 @@ private fun SimulationInjectionCard(
                 label = { Text(stringResource(R.string.simulation_body_label)) },
                 placeholder = { Text("Your verification code is 123456") },
             )
-            Button(
-                onClick = onInject,
-                enabled = senderNumber.isNotBlank() && messageBody.isNotBlank(),
-                modifier = Modifier.align(Alignment.End),
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End,
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text(stringResource(R.string.simulation_inject))
+                if (debugQuickAction != null) {
+                    TextButton(onClick = onInjectSample) {
+                        Text(debugQuickAction.actionLabel)
+                    }
+                    Spacer(modifier = Modifier.width(12.dp))
+                }
+                Button(
+                    onClick = onInject,
+                    enabled = senderNumber.isNotBlank() && messageBody.isNotBlank(),
+                ) {
+                    Text(stringResource(R.string.simulation_inject))
+                }
             }
         }
     }
