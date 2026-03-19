@@ -1,14 +1,19 @@
 package com.example.mysmscode
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.selection.toggleable
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -25,6 +30,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -32,8 +38,11 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.example.mysmscode.domain.CountryOption
+import com.example.mysmscode.domain.buildCountryPickerOptions
+import com.example.mysmscode.domain.findCountryOption
 import com.example.mysmscode.domain.RobotEndpoint
 import com.example.mysmscode.domain.RobotType
+import com.example.mysmscode.domain.RuleSenderInputMode
 import com.example.mysmscode.domain.SenderRule
 
 @Composable
@@ -239,11 +248,15 @@ fun RobotEditorDialog(
 @Composable
 fun RuleEditorDialog(
     isEditMode: Boolean,
+    inputMode: RuleSenderInputMode,
+    onInputModeChange: (RuleSenderInputMode) -> Unit,
     countryOptions: List<CountryOption>,
     selectedCountry: CountryOption,
     onCountrySelected: (CountryOption) -> Unit,
     localNumber: String,
     onLocalNumberChange: (String) -> Unit,
+    displaySender: String,
+    onDisplaySenderChange: (String) -> Unit,
     keywordText: String,
     onKeywordTextChange: (String) -> Unit,
     ruleEnabled: Boolean,
@@ -270,26 +283,75 @@ fun RuleEditorDialog(
         )
     }
 
+    val senderInputValid = when (inputMode) {
+        RuleSenderInputMode.DISPLAY_VALUE -> displaySender.isNotBlank()
+        RuleSenderInputMode.INTERNATIONAL_NUMBER -> localNumber.isNotBlank()
+    }
+
     AlertDialog(
         onDismissRequest = onDismiss,
         title = {
             Text(stringResource(if (isEditMode) R.string.rule_dialog_edit_title else R.string.rule_form_title))
         },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
+            val contentScrollState = rememberScrollState()
+            val robotScrollState = rememberScrollState()
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 520.dp)
+                    .verticalScroll(contentScrollState),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                Text(
+                    stringResource(R.string.rule_sender_mode_label),
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Medium,
+                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    RadioButton(
+                        selected = inputMode == RuleSenderInputMode.DISPLAY_VALUE,
+                        onClick = { onInputModeChange(RuleSenderInputMode.DISPLAY_VALUE) },
+                    )
+                    Text(stringResource(R.string.rule_sender_mode_display))
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    RadioButton(
+                        selected = inputMode == RuleSenderInputMode.INTERNATIONAL_NUMBER,
+                        onClick = { onInputModeChange(RuleSenderInputMode.INTERNATIONAL_NUMBER) },
+                    )
+                    Text(stringResource(R.string.rule_sender_mode_international))
+                }
+                Text(
+                    text = stringResource(
+                        if (inputMode == RuleSenderInputMode.DISPLAY_VALUE) {
+                            R.string.rule_sender_mode_display_hint
+                        } else {
+                            R.string.rule_sender_mode_international_hint
+                        }
+                    ),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+
+                if (inputMode == RuleSenderInputMode.DISPLAY_VALUE) {
+                    OutlinedTextField(
+                        value = displaySender,
+                        onValueChange = onDisplaySenderChange,
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text(stringResource(R.string.rule_sender_display_label)) },
+                        supportingText = { Text(stringResource(R.string.rule_sender_display_support)) },
+                    )
+                } else {
                     TextButton(onClick = { showCountryPicker = true }) {
                         Text(selectedCountry.displayName)
                     }
                     OutlinedTextField(
                         value = localNumber,
                         onValueChange = onLocalNumberChange,
-                        modifier = Modifier.weight(1f),
+                        modifier = Modifier.fillMaxWidth(),
                         label = { Text(stringResource(R.string.rule_sender_label)) },
+                        supportingText = { Text(stringResource(R.string.rule_sender_international_support)) },
                     )
                 }
                 OutlinedTextField(
@@ -312,26 +374,34 @@ fun RuleEditorDialog(
                 if (robots.isEmpty()) {
                     Text(stringResource(R.string.rule_no_robot))
                 } else {
-                    robots.forEach { robot ->
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .toggleable(
-                                    value = selectedRobotIds.contains(robot.id),
-                                    onValueChange = { checked -> onToggleRobot(robot.id, checked) },
-                                )
-                                .padding(vertical = 4.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Checkbox(checked = selectedRobotIds.contains(robot.id), onCheckedChange = null)
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Column {
-                                Text(robot.name)
-                                Text(
-                                    text = "${robotTypeLabel(context, robot.type)} - ${shortEnabledStateLabel(context, robot.enabled)}",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 180.dp)
+                            .verticalScroll(robotScrollState),
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        robots.forEach { robot ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .toggleable(
+                                        value = selectedRobotIds.contains(robot.id),
+                                        onValueChange = { checked -> onToggleRobot(robot.id, checked) },
+                                    )
+                                    .padding(vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Checkbox(checked = selectedRobotIds.contains(robot.id), onCheckedChange = null)
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Column {
+                                    Text(robot.name)
+                                    Text(
+                                        text = "${robotTypeLabel(context, robot.type)} - ${shortEnabledStateLabel(context, robot.enabled)}",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
                             }
                         }
                     }
@@ -339,7 +409,7 @@ fun RuleEditorDialog(
             }
         },
         confirmButton = {
-            Button(onClick = onSave, enabled = localNumber.isNotBlank() && keywordText.isNotBlank()) {
+            Button(onClick = onSave, enabled = senderInputValid && keywordText.isNotBlank()) {
                 Text(stringResource(if (isEditMode) R.string.action_update else R.string.rule_save))
             }
         },
@@ -365,25 +435,68 @@ private fun CountryPickerDialog(
     onSelect: (CountryOption) -> Unit,
     onDismiss: () -> Unit,
 ) {
+    var query by rememberSaveable { mutableStateOf("") }
+    val filteredOptions = remember(options, selectedCountry, query) {
+        buildCountryPickerOptions(
+            options = options,
+            selectedCountry = selectedCountry,
+            query = query,
+        )
+    }
+
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(R.string.rule_country_picker_title)) },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                options.forEach { option ->
-                    Row(
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                OutlinedTextField(
+                    value = query,
+                    onValueChange = { query = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text(stringResource(R.string.rule_country_picker_search_label)) },
+                    singleLine = true,
+                )
+                if (filteredOptions.isEmpty()) {
+                    Text(
+                        text = stringResource(R.string.rule_country_picker_empty),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                } else {
+                    LazyColumn(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clickable { onSelect(option) }
-                            .padding(vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically,
+                            .heightIn(max = 360.dp),
+                        verticalArrangement = Arrangement.spacedBy(2.dp),
                     ) {
-                        RadioButton(
-                            selected = option.regionCode == selectedCountry.regionCode,
-                            onClick = { onSelect(option) },
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(option.displayName)
+                        items(
+                            items = filteredOptions,
+                            key = { option -> option.regionCode },
+                        ) { option ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { onSelect(findCountryOption(option.regionCode)) }
+                                    .padding(vertical = 2.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                RadioButton(
+                                    selected = option.regionCode == selectedCountry.regionCode,
+                                    onClick = { onSelect(findCountryOption(option.regionCode)) },
+                                )
+                                Text(
+                                    text = option.displayName,
+                                    modifier = Modifier.weight(1f),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                )
+                                Text(
+                                    text = option.callingCode,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
                     }
                 }
             }

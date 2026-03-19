@@ -226,4 +226,32 @@ class ProcessIncomingSmsUseCaseTest {
         assertTrue(result is SmsProcessingResult.Ignored)
     }
 
+
+    @Test
+    fun senderNumberMatching_matchesRawDisplayShortCodeWithoutCountryPrefix() {
+        val result = useCase.process(
+            senderNumber = "10654321",
+            messageBody = "test verification code is 223344",
+            rules = listOf(
+                SenderRule(
+                    senderNumber = "10654321",
+                    enabled = true,
+                    keywords = listOf("code"),
+                    selectedRobotIds = listOf(1L),
+                )
+            ),
+            robots = listOf(
+                RobotEndpoint(
+                    id = 1L,
+                    name = "Feishu Main",
+                    type = RobotType.FEISHU,
+                    enabled = true,
+                    webhookUrl = "https://example.com/feishu",
+                )
+            ),
+        )
+
+        assertTrue(result is SmsProcessingResult.PendingForward)
+    }
+
 }

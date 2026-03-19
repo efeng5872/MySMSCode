@@ -83,9 +83,8 @@ fun findMatchingSimulationRule(
     rules: List<SenderRule>,
     phoneNumberNormalizer: PhoneNumberNormalizer = PhoneNumberNormalizer(),
 ): SenderRule? {
-    val normalizedSender = phoneNumberNormalizer.normalize(senderNumber)
     return rules.firstOrNull { rule ->
-        rule.enabled && phoneNumberNormalizer.normalize(rule.senderNumber) == normalizedSender
+        rule.enabled && phoneNumberNormalizer.matches(rule.senderNumber, senderNumber)
     }
 }
 

@@ -1,6 +1,8 @@
 package com.example.mysmscode.domain
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class PhoneNumberNormalizerTest {
@@ -44,4 +46,54 @@ class PhoneNumberNormalizerTest {
 
         assertEquals("001", normalized)
     }
+
+    @Test
+    fun matches_returnsTrueForEquivalentChinaNumberRepresentations() {
+        val matched = normalizer.matches(
+            configuredSender = "13608083211",
+            incomingSender = "+8613608083211",
+        )
+
+        assertTrue(matched)
+    }
+
+    @Test
+    fun matches_returnsTrueForRawDisplayShortCode() {
+        val matched = normalizer.matches(
+            configuredSender = "10654321",
+            incomingSender = "10654321",
+        )
+
+        assertTrue(matched)
+    }
+
+    @Test
+    fun matches_returnsFalseForDifferentRawDisplayValues() {
+        val matched = normalizer.matches(
+            configuredSender = "10654321",
+            incomingSender = "10654322",
+        )
+
+        assertFalse(matched)
+    }
+
+
+    @Test
+    fun splitSenderNumberForEditing_returnsDisplayModeForShortCode() {
+        val draft = splitSenderNumberForEditing("10654321")
+
+        assertEquals(RuleSenderInputMode.DISPLAY_VALUE, draft.inputMode)
+        assertEquals("10654321", draft.displaySender)
+        assertEquals("", draft.localNumber)
+    }
+
+    @Test
+    fun splitSenderNumberForEditing_returnsInternationalModeForPhoneNumber() {
+        val draft = splitSenderNumberForEditing("+8613608083211")
+
+        assertEquals(RuleSenderInputMode.INTERNATIONAL_NUMBER, draft.inputMode)
+        assertEquals("CN", draft.countryOption.regionCode)
+        assertEquals("13608083211", draft.localNumber)
+    }
+
 }

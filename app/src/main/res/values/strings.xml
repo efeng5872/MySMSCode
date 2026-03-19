@@ -73,7 +73,15 @@
     <string name="robot_save">&#x4FDD;&#x5B58;&#x76EE;&#x6807;&#x673A;&#x5668;&#x4EBA;</string>
     <string name="rule_form_title">&#x65B0;&#x589E;&#x53F7;&#x7801;&#x89C4;&#x5219;</string>
     <string name="rule_sender_label">&#x53D1;&#x9001;&#x53F7;&#x7801;</string>
+    <string name="rule_sender_mode_label">配置方式</string>
+    <string name="rule_sender_mode_display">按显示值配置</string>
+    <string name="rule_sender_mode_display_hint">适合短号码、服务号或你在短信列表里直接看到的发件人。</string>
+    <string name="rule_sender_mode_international">按国际号码配置</string>
+    <string name="rule_sender_mode_international_hint">适合标准手机号或电话号码，支持国家码格式兼容。</string>
+    <string name="rule_sender_display_label">发件人显示值</string>
+    <string name="rule_sender_display_support">建议直接填写手机短信列表里看到的发件人内容，例如 10654321。</string>
     <string name="rule_keyword_label">&#x5173;&#x952E;&#x5B57;</string>
+    <string name="rule_sender_international_support">适合手机号或电话号码，系统会自动兼容国家码格式差异。</string>
     <string name="rule_keyword_support">&#x4F7F;&#x7528;&#x9017;&#x53F7;&#x5206;&#x9694;&#x3002;&#x7CFB;&#x7EDF;&#x4F1A;&#x6309;&#x4E0D;&#x533A;&#x5206;&#x5927;&#x5C0F;&#x5199;&#x7684;&#x5305;&#x542B;&#x5339;&#x914D;&#x89C4;&#x5219;&#x5904;&#x7406;&#x3002;</string>
     <string name="rule_enabled">&#x89C4;&#x5219;&#x5DF2;&#x542F;&#x7528;</string>
     <string name="rule_disabled">&#x89C4;&#x5219;&#x5DF2;&#x505C;&#x7528;</string>
@@ -160,6 +168,8 @@
     <string name="robot_dialog_edit_title">&#x7F16;&#x8F91;&#x76EE;&#x6807;&#x673A;&#x5668;&#x4EBA;</string>
     <string name="rule_dialog_edit_title">&#x7F16;&#x8F91;&#x53F7;&#x7801;&#x89C4;&#x5219;</string>
     <string name="rule_country_picker_title">&#x9009;&#x62E9;&#x56FD;&#x5BB6;&#x6216;&#x5730;&#x533A;</string>
+    <string name="rule_country_picker_search_label">搜索国家、地区码或国家码</string>
+    <string name="rule_country_picker_empty">未找到匹配的国家或地区。</string>
     <string name="delete_confirm_title">&#x786E;&#x8BA4;&#x5220;&#x9664;</string>
     <string name="delete_robot_confirm_message">&#x786E;&#x8BA4;&#x5220;&#x9664;&#x76EE;&#x6807;&#x673A;&#x5668;&#x4EBA;&#xFF1A;%1$s&#xFF1F;</string>
     <string name="delete_rule_confirm_message">&#x786E;&#x8BA4;&#x5220;&#x9664;&#x53F7;&#x7801;&#x89C4;&#x5219;&#xFF1A;%1$s&#xFF1F;</string>

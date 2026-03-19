@@ -65,6 +65,7 @@ import com.example.mysmscode.domain.RetryableAttempt
 import com.example.mysmscode.domain.RobotEndpoint
 import com.example.mysmscode.domain.RobotType
 import com.example.mysmscode.domain.SenderRule
+import com.example.mysmscode.domain.RuleSenderInputMode
 import com.example.mysmscode.domain.SimulationInjectionRequest
 import com.example.mysmscode.domain.SimulationInjectionValidation
 import com.example.mysmscode.domain.buildSimulationFeedbackPlan
@@ -75,16 +76,17 @@ import com.example.mysmscode.domain.completedRetryCount
 import com.example.mysmscode.domain.resolveMonitoringStatusMessage
 import com.example.mysmscode.domain.canDeleteRobot
 import com.example.mysmscode.domain.buildSimulationRuleMismatchMessage
-import com.example.mysmscode.domain.buildDebugSimulationQuickAction
 import com.example.mysmscode.domain.findInjectedSimulationRecord
 import com.example.mysmscode.domain.findMatchingSimulationRule
 import com.example.mysmscode.domain.shouldAutoRequestPermissions
 import com.example.mysmscode.domain.buildRuleSenderNumber
+import com.example.mysmscode.domain.defaultRuleNumberDraft
 import com.example.mysmscode.domain.defaultCountryOption
 import com.example.mysmscode.domain.findCountryOption
 import com.example.mysmscode.domain.splitSenderNumberForEditing
 import com.example.mysmscode.domain.supportedCountryOptions
 import com.example.mysmscode.domain.formatRetryTimestamp
+import com.example.mysmscode.domain.preloadCountryOptions
 import com.example.mysmscode.domain.receivedAtLabel
 import com.example.mysmscode.ui.theme.MySMSCodeTheme
 import kotlinx.coroutines.Dispatchers
@@ -121,22 +123,21 @@ private fun ConfigurationWorkbench(container: AppContainer) {
     var statusMessage by remember { mutableStateOf("") }
     var currentPage by rememberSaveable { mutableStateOf(WorkbenchPage.HOME.name) }
     var hasAutoRequestedPermissions by rememberSaveable { mutableStateOf(false) }
+    var countryOptionsPreloaded by remember { mutableStateOf(false) }
     val scrollState = rememberScrollState()
-    val debugSimulationQuickAction = remember {
-        buildDebugSimulationQuickAction(
-            isDebug = (context.applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0,
-        )
-    }
 
     var robotName by rememberSaveable { mutableStateOf("") }
     var robotWebhook by rememberSaveable { mutableStateOf("") }
     var robotEnabled by rememberSaveable { mutableStateOf(true) }
     var robotType by rememberSaveable { mutableStateOf(RobotType.FEISHU) }
 
+    var ruleSenderInputMode by rememberSaveable { mutableStateOf(defaultRuleNumberDraft().inputMode.name) }
     var senderNumber by rememberSaveable { mutableStateOf("") }
+    var rawSenderDisplay by rememberSaveable { mutableStateOf("") }
     var selectedCountryRegion by rememberSaveable { mutableStateOf(defaultCountryOption().regionCode) }
-    var simulationSenderNumber by rememberSaveable { mutableStateOf("") }
-    var simulationMessageBody by rememberSaveable { mutableStateOf("") }
+    var simulationSenderNumber by rememberSaveable { mutableStateOf("10654321") }
+    var simulationMessageBody by rememberSaveable { mutableStateOf("test verification code is 223344") }
+    var simulationStatusMessage by rememberSaveable { mutableStateOf("") }
     var keywordText by rememberSaveable { mutableStateOf("") }
     var ruleEnabled by rememberSaveable { mutableStateOf(true) }
     val selectedRobotIds = remember { mutableStateListOf<Long>() }
@@ -212,12 +213,12 @@ private fun ConfigurationWorkbench(container: AppContainer) {
             rules = rules,
         )
         if (matchedRule == null) {
-            statusMessage = buildSimulationRuleMismatchMessage()
+            simulationStatusMessage = buildSimulationRuleMismatchMessage()
             return
         }
         val feedbackPlan = buildSimulationFeedbackPlan(request.senderNumber)
         val submittedAt = System.currentTimeMillis()
-        statusMessage = feedbackPlan.submittedStatusMessage
+        simulationStatusMessage = feedbackPlan.submittedStatusMessage
         MonitoringForegroundService.enqueueSimulation(
             context = context,
             senderNumber = request.senderNumber,
@@ -228,7 +229,7 @@ private fun ConfigurationWorkbench(container: AppContainer) {
             scrollState.animateScrollTo(0)
         }
         delay(feedbackPlan.submittedStatusVisibleDelayMillis)
-        statusMessage = feedbackPlan.matchedRuleStatusMessage
+        simulationStatusMessage = feedbackPlan.matchedRuleStatusMessage
         var recordWritten = false
         for (delayMillis in feedbackPlan.refreshDelaysMillis) {
             delay(delayMillis)
@@ -240,7 +241,7 @@ private fun ConfigurationWorkbench(container: AppContainer) {
                 submittedAt = submittedAt,
             )
             if (injectedRecord != null) {
-                statusMessage = feedbackPlan.completedStatusMessage
+                simulationStatusMessage = feedbackPlan.completedStatusMessage
                 recordWritten = true
                 break
             }
@@ -254,12 +255,12 @@ private fun ConfigurationWorkbench(container: AppContainer) {
                 submittedAt = submittedAt,
             )
             if (injectedRecord != null) {
-                statusMessage = feedbackPlan.completedStatusMessage
+                simulationStatusMessage = feedbackPlan.completedStatusMessage
                 recordWritten = true
             }
         }
         if (!recordWritten) {
-            statusMessage = feedbackPlan.timeoutStatusMessage
+            simulationStatusMessage = feedbackPlan.timeoutStatusMessage
         }
     }
 
@@ -297,10 +298,13 @@ private fun ConfigurationWorkbench(container: AppContainer) {
     }
 
     fun resetRuleEditor() {
+        val defaultDraft = defaultRuleNumberDraft()
         editingRuleId = null
         editingRuleCreatedAt = 0L
-        senderNumber = ""
-        selectedCountryRegion = defaultCountryOption().regionCode
+        ruleSenderInputMode = defaultDraft.inputMode.name
+        senderNumber = defaultDraft.localNumber
+        rawSenderDisplay = defaultDraft.displaySender
+        selectedCountryRegion = defaultDraft.countryOption.regionCode
         keywordText = ""
         ruleEnabled = true
         selectedRobotIds.clear()
@@ -316,8 +320,10 @@ private fun ConfigurationWorkbench(container: AppContainer) {
         val numberDraft = splitSenderNumberForEditing(rule.senderNumber)
         editingRuleId = rule.id
         editingRuleCreatedAt = rule.createdAt
+        ruleSenderInputMode = numberDraft.inputMode.name
         selectedCountryRegion = numberDraft.countryOption.regionCode
         senderNumber = numberDraft.localNumber
+        rawSenderDisplay = numberDraft.displaySender
         keywordText = rule.keywords.joinToString()
         ruleEnabled = rule.enabled
         selectedRobotIds.clear()
@@ -340,8 +346,18 @@ private fun ConfigurationWorkbench(container: AppContainer) {
         }
     }
 
+    LaunchedEffect(currentPage, countryOptionsPreloaded) {
+        if (currentPage == WorkbenchPage.CONFIG.name && !countryOptionsPreloaded) {
+            withContext(Dispatchers.Default) {
+                preloadCountryOptions()
+            }
+            countryOptionsPreloaded = true
+        }
+    }
+
     val availableCountryOptions = remember { supportedCountryOptions() }
     val selectedCountryOption = remember(selectedCountryRegion) { findCountryOption(selectedCountryRegion) }
+    val selectedRuleSenderInputMode = remember(ruleSenderInputMode) { RuleSenderInputMode.valueOf(ruleSenderInputMode) }
 
     val permissionUiState = remember(context, permissionSnapshot) {
         buildPermissionUiState(context, permissionSnapshot)
@@ -593,11 +609,15 @@ private fun ConfigurationWorkbench(container: AppContainer) {
                     if (showRuleDialog) {
                         RuleEditorDialog(
                             isEditMode = editingRuleId != null,
+                            inputMode = selectedRuleSenderInputMode,
+                            onInputModeChange = { ruleSenderInputMode = it.name },
                             countryOptions = availableCountryOptions,
                             selectedCountry = selectedCountryOption,
                             onCountrySelected = { selectedCountryRegion = it.regionCode },
                             localNumber = senderNumber,
                             onLocalNumberChange = { senderNumber = it },
+                            displaySender = rawSenderDisplay,
+                            onDisplaySenderChange = { rawSenderDisplay = it },
                             keywordText = keywordText,
                             onKeywordTextChange = { keywordText = it },
                             ruleEnabled = ruleEnabled,
@@ -622,7 +642,7 @@ private fun ConfigurationWorkbench(container: AppContainer) {
                                     val result = withContext(Dispatchers.IO) {
                                         val rule = SenderRule(
                                             id = editingRuleId ?: 0L,
-                                            senderNumber = buildRuleSenderNumber(countryOption = selectedCountryOption, localNumber = senderNumber),
+                                            senderNumber = buildRuleSenderNumber(inputMode = selectedRuleSenderInputMode, countryOption = selectedCountryOption, localNumber = senderNumber, displaySender = rawSenderDisplay),
                                             enabled = ruleEnabled,
                                             keywords = keywords,
                                             selectedRobotIds = selectedRobotIds.toList(),
@@ -720,7 +740,7 @@ private fun ConfigurationWorkbench(container: AppContainer) {
                             onSenderNumberChange = { simulationSenderNumber = it },
                             messageBody = simulationMessageBody,
                             onMessageBodyChange = { simulationMessageBody = it },
-                            debugQuickAction = debugSimulationQuickAction,
+                            statusMessage = simulationStatusMessage,
                             showHeader = false,
                             onInject = {
                                 scope.launch {
@@ -736,15 +756,6 @@ private fun ConfigurationWorkbench(container: AppContainer) {
                                         is SimulationInjectionValidation.Valid -> {
                                             performSimulationInjection(validation.request)
                                         }
-                                    }
-                                }
-                            },
-                            onInjectSample = {
-                                scope.launch {
-                                    debugSimulationQuickAction?.let { quickAction ->
-                                        simulationSenderNumber = quickAction.request.senderNumber
-                                        simulationMessageBody = quickAction.request.messageBody
-                                        performSimulationInjection(quickAction.request)
                                     }
                                 }
                             },
@@ -1067,10 +1078,9 @@ private fun SimulationInjectionCard(
     onSenderNumberChange: (String) -> Unit,
     messageBody: String,
     onMessageBodyChange: (String) -> Unit,
-    debugQuickAction: com.example.mysmscode.domain.DebugSimulationQuickAction? = null,
+    statusMessage: String,
     showHeader: Boolean = true,
     onInject: () -> Unit,
-    onInjectSample: () -> Unit = {},
 ) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -1086,6 +1096,13 @@ private fun SimulationInjectionCard(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            if (statusMessage.isNotBlank()) {
+                Text(
+                    text = statusMessage,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
             OutlinedTextField(
                 value = senderNumber,
                 onValueChange = onSenderNumberChange,
@@ -1100,23 +1117,12 @@ private fun SimulationInjectionCard(
                 label = { Text(stringResource(R.string.simulation_body_label)) },
                 placeholder = { Text("Your verification code is 123456") },
             )
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.End,
-                verticalAlignment = Alignment.CenterVertically,
+            Button(
+                onClick = onInject,
+                enabled = senderNumber.isNotBlank() && messageBody.isNotBlank(),
+                modifier = Modifier.align(Alignment.End),
             ) {
-                if (debugQuickAction != null) {
-                    TextButton(onClick = onInjectSample) {
-                        Text(debugQuickAction.actionLabel)
-                    }
-                    Spacer(modifier = Modifier.width(12.dp))
-                }
-                Button(
-                    onClick = onInject,
-                    enabled = senderNumber.isNotBlank() && messageBody.isNotBlank(),
-                ) {
-                    Text(stringResource(R.string.simulation_inject))
-                }
+                Text(stringResource(R.string.simulation_inject))
             }
         }
     }

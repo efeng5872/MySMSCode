@@ -12,8 +12,7 @@ class ProcessIncomingSmsUseCase(
         rules: List<SenderRule>,
         robots: List<RobotEndpoint>,
     ): SmsProcessingResult {
-        val normalizedIncomingSender = phoneNumberNormalizer.normalize(senderNumber)
-        val rule = rules.firstOrNull { phoneNumberNormalizer.normalize(it.senderNumber) == normalizedIncomingSender }
+        val rule = rules.firstOrNull { phoneNumberNormalizer.matches(it.senderNumber, senderNumber) }
             ?: return SmsProcessingResult.Ignored
         if (!rule.enabled) {
             return SmsProcessingResult.Ignored
