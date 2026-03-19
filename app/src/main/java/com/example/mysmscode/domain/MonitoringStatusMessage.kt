@@ -14,3 +14,12 @@ fun resolveMonitoringStatusMessage(
         else -> fallbackMessage
     }
 }
+
+fun calculateStatusMessageDelayMillis(
+    requestStartedAtMillis: Long,
+    nowMillis: Long,
+    minimumVisibleMillis: Long,
+): Long {
+    val elapsed = (nowMillis - requestStartedAtMillis).coerceAtLeast(0L)
+    return (minimumVisibleMillis - elapsed).coerceAtLeast(0L)
+}

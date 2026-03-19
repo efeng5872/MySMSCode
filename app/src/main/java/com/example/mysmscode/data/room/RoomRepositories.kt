@@ -24,6 +24,19 @@ class RoomRobotEndpointRepository(
         RepositorySaveResult.DuplicateName
     }
 
+    suspend fun update(robot: RobotEndpoint): RepositorySaveResult<RobotEndpoint> = runCatching {
+        robotEndpointDao.update(RobotEndpointEntity.fromDomain(robot))
+        RepositorySaveResult.Success(robot)
+    }.getOrElse {
+        RepositorySaveResult.DuplicateName
+    }
+
+    suspend fun deleteById(id: Long) {
+        robotEndpointDao.deleteById(id)
+    }
+
+    suspend fun findById(id: Long): RobotEndpoint? = robotEndpointDao.findById(id)?.toDomain()
+
     suspend fun getAll(): List<RobotEndpoint> = robotEndpointDao.getAll().map(RobotEndpointEntity::toDomain)
 }
 
@@ -47,6 +60,35 @@ class RoomSenderRuleRepository(
     }.getOrElse {
         RepositorySaveResult.DuplicateSenderNumber
     }
+
+    suspend fun update(rule: SenderRule): RepositorySaveResult<SenderRule> = runCatching {
+        database.withTransaction {
+            senderRuleDao.update(SenderRuleEntity.fromDomain(rule))
+            senderRuleDao.deleteCrossRefsForRule(rule.id)
+            val crossRefs = rule.selectedRobotIds.mapIndexed { index, robotId ->
+                SenderRuleRobotCrossRef(
+                    senderRuleId = rule.id,
+                    robotEndpointId = robotId,
+                    sortOrder = index,
+                )
+            }
+            senderRuleDao.insertCrossRefs(crossRefs)
+            RepositorySaveResult.Success(rule)
+        }
+    }.getOrElse {
+        RepositorySaveResult.DuplicateSenderNumber
+    }
+
+    suspend fun deleteById(id: Long) {
+        database.withTransaction {
+            senderRuleDao.deleteCrossRefsForRule(id)
+            senderRuleDao.deleteById(id)
+        }
+    }
+
+    suspend fun countRulesUsingRobot(robotId: Long): Int = senderRuleDao.countRulesUsingRobot(robotId)
+
+    suspend fun findById(id: Long): SenderRule? = senderRuleDao.findById(id)?.toDomain()
 
     suspend fun findBySenderNumber(senderNumber: String): SenderRule? {
         return senderRuleDao.findBySenderNumber(senderNumber)?.toDomain()

@@ -43,4 +43,26 @@ class MonitoringStatusMessageTest {
 
         assertEquals("停止失败", message)
     }
+
+    @Test
+    fun calculateStatusMessageDelay_returnsRemainingDelayWhenRequestWasTooFast() {
+        val delay = calculateStatusMessageDelayMillis(
+            requestStartedAtMillis = 1_000L,
+            nowMillis = 1_180L,
+            minimumVisibleMillis = 600L,
+        )
+
+        assertEquals(420L, delay)
+    }
+
+    @Test
+    fun calculateStatusMessageDelay_returnsZeroWhenRequestWasVisibleLongEnough() {
+        val delay = calculateStatusMessageDelayMillis(
+            requestStartedAtMillis = 1_000L,
+            nowMillis = 1_800L,
+            minimumVisibleMillis = 600L,
+        )
+
+        assertEquals(0L, delay)
+    }
 }

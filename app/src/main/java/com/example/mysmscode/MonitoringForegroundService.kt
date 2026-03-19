@@ -44,7 +44,7 @@ class MonitoringForegroundService : Service() {
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
-        startForeground(NOTIFICATION_ID, buildNotification("Monitoring skeleton active"))
+        startForeground(NOTIFICATION_ID, buildNotification(getString(R.string.notification_service_active)))
         DebugTraceLogger.d("service_created action=foreground_start")
         ensureRetryLoop()
     }
@@ -69,7 +69,7 @@ class MonitoringForegroundService : Service() {
             }
 
             ACTION_START_MONITORING -> {
-                startForeground(NOTIFICATION_ID, buildNotification("Monitoring started"))
+                startForeground(NOTIFICATION_ID, buildNotification(getString(R.string.notification_monitoring_started)))
                 DebugTraceLogger.d("service_monitoring_requested")
                 serviceScope.launch {
                     processDueRetries()
@@ -79,6 +79,7 @@ class MonitoringForegroundService : Service() {
             ACTION_STOP_MONITORING -> {
                 DebugTraceLogger.d("service_monitoring_stop_requested")
                 stopForeground(STOP_FOREGROUND_REMOVE)
+                showStoppedNotification()
                 stopSelf()
             }
 
@@ -155,7 +156,7 @@ class MonitoringForegroundService : Service() {
                 finalizeOutcomeUseCase.finalize(initialOutcome, dispatchResults, attemptedAt, retryPolicyConfig)
             }
             container.processingRepository.saveOutcome(finalOutcome)
-            notifyStatus("Processed ${finalOutcome.record.senderNumber} with ${finalOutcome.record.status.name}.")
+            notifyStatus(getString(R.string.notification_processed, finalOutcome.record.senderNumber, smsStatusLabel(this, finalOutcome.record.toPreview())))
         } else {
             DebugTraceLogger.d("processing_result source=$source status=IGNORED attempts=0 sender=$senderNumber")
         }
@@ -166,7 +167,7 @@ class MonitoringForegroundService : Service() {
             val container = (application as MySmsCodeApplication).container
             val failedAttempt = container.processingRepository.getRetryableAttemptById(attemptId) ?: run {
                 DebugTraceLogger.w("retry_lookup missing attemptId=$attemptId")
-                notifyStatus("Retry skipped because the failed attempt was not found.")
+                notifyStatus(getString(R.string.notification_retry_skipped_not_found))
                 return
             }
             executeRetry(container, failedAttempt)
@@ -219,9 +220,18 @@ class MonitoringForegroundService : Service() {
         DebugTraceLogger.d(
             "retry_execution sender=${failedAttempt.senderNumber} channel=${failedAttempt.robotType.name} status=${execution.nextAttempt.status} attempt=${execution.nextAttempt.attemptNumber} nextRetryAt=${execution.nextAttempt.nextRetryAt ?: "none"}"
         )
-        notifyStatus("Retried ${failedAttempt.senderNumber} via ${failedAttempt.robotType.name}: ${execution.nextAttempt.status.name}")
+        notifyStatus(getString(R.string.notification_retried, failedAttempt.senderNumber, getString(notificationRobotTypeLabelRes(failedAttempt.robotType)), getString(notificationForwardStatusLabelRes(execution.nextAttempt.status))))
     }
 
+
+    private fun com.example.mysmscode.domain.SmsRecordDraft.toPreview(): com.example.mysmscode.domain.SmsRecordPreview =
+        com.example.mysmscode.domain.SmsRecordPreview(
+            senderNumber = senderNumber,
+            messageBody = messageBody,
+            status = status.name,
+            source = source.name,
+            receivedAt = receivedAt,
+        )
     private fun notifyStatus(contentText: String) {
         val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         notificationManager.notify(NOTIFICATION_ID, buildNotification(contentText))
@@ -229,15 +239,27 @@ class MonitoringForegroundService : Service() {
 
     private fun buildNotification(contentText: String) = NotificationCompat.Builder(this, CHANNEL_ID)
         .setSmallIcon(R.mipmap.ic_launcher)
-        .setContentTitle("MySMSCode Monitoring")
+        .setContentTitle(getString(R.string.notification_title))
         .setContentText(contentText)
         .setOngoing(true)
         .build()
 
+
+    private fun showStoppedNotification() {
+        val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        val notification = NotificationCompat.Builder(this, CHANNEL_ID)
+            .setSmallIcon(R.mipmap.ic_launcher)
+            .setContentTitle(getString(R.string.notification_stopped_title))
+            .setContentText(getString(R.string.notification_stopped_message))
+            .setAutoCancel(true)
+            .setTimeoutAfter(STOPPED_NOTIFICATION_TIMEOUT_MS)
+            .build()
+        notificationManager.notify(STOPPED_NOTIFICATION_ID, notification)
+    }
     private fun createNotificationChannel() {
         val channel = NotificationChannel(
             CHANNEL_ID,
-            "Monitoring",
+            getString(R.string.notification_channel_name),
             NotificationManager.IMPORTANCE_LOW,
         )
         val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
@@ -247,6 +269,8 @@ class MonitoringForegroundService : Service() {
     companion object {
         private const val CHANNEL_ID = "monitoring_channel"
         private const val NOTIFICATION_ID = 1001
+        private const val STOPPED_NOTIFICATION_ID = 1002
+        private const val STOPPED_NOTIFICATION_TIMEOUT_MS = 5_000L
         private const val ACTION_START_MONITORING = "com.example.mysmscode.action.START_MONITORING"
         private const val ACTION_STOP_MONITORING = "com.example.mysmscode.action.STOP_MONITORING"
         private const val ACTION_PROCESS_SMS = "com.example.mysmscode.action.PROCESS_SMS"
@@ -298,3 +322,7 @@ class MonitoringForegroundService : Service() {
         }
     }
 }
+
+
+
+

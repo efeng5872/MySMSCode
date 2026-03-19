@@ -30,7 +30,13 @@ class InMemoryRobotEndpointRepository {
         return RepositorySaveResult.Success(robot)
     }
 
+    fun deleteById(id: Long) {
+        robots.remove(id)
+    }
+
     fun findById(id: Long): RobotEndpoint? = robots[id]
+
+    fun getAll(): List<RobotEndpoint> = robots.values.toList()
 
     private fun hasDuplicateName(robot: RobotEndpoint): Boolean {
         val normalizedName = robot.name.normalized()

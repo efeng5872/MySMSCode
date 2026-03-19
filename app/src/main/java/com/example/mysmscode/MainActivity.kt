@@ -34,6 +34,7 @@ import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -45,6 +46,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -52,7 +55,6 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import com.example.mysmscode.data.RepositorySaveResult
 import com.example.mysmscode.domain.AppPermissionSnapshot
-import com.example.mysmscode.domain.BuildConfigurationSummaryUseCase
 import com.example.mysmscode.domain.ConfigurationRuleSummary
 import com.example.mysmscode.domain.FailedRetryFilterOption
 import com.example.mysmscode.domain.HistoryFilterOption
@@ -68,8 +70,15 @@ import com.example.mysmscode.domain.SmsRecordPreview
 import com.example.mysmscode.domain.buildMonitoringControlState
 import com.example.mysmscode.domain.buildMonitoringDashboard
 import com.example.mysmscode.domain.completedRetryCount
-import com.example.mysmscode.domain.formatRetryTimestamp
 import com.example.mysmscode.domain.resolveMonitoringStatusMessage
+import com.example.mysmscode.domain.canDeleteRobot
+import com.example.mysmscode.domain.shouldAutoRequestPermissions
+import com.example.mysmscode.domain.buildRuleSenderNumber
+import com.example.mysmscode.domain.defaultCountryOption
+import com.example.mysmscode.domain.findCountryOption
+import com.example.mysmscode.domain.splitSenderNumberForEditing
+import com.example.mysmscode.domain.supportedCountryOptions
+import com.example.mysmscode.domain.formatRetryTimestamp
 import com.example.mysmscode.domain.receivedAtLabel
 import com.example.mysmscode.ui.theme.MySMSCodeTheme
 import kotlinx.coroutines.Dispatchers
@@ -92,7 +101,6 @@ class MainActivity : ComponentActivity() {
 @Composable
 private fun ConfigurationWorkbench(container: AppContainer) {
     val scope = rememberCoroutineScope()
-    val summaryUseCase = remember { BuildConfigurationSummaryUseCase() }
     val context = LocalContext.current
 
     var robots by remember { mutableStateOf(emptyList<RobotEndpoint>()) }
@@ -106,6 +114,8 @@ private fun ConfigurationWorkbench(container: AppContainer) {
     var isLoading by remember { mutableStateOf(true) }
     var statusMessage by remember { mutableStateOf(context.getString(R.string.status_ready)) }
     var currentPage by rememberSaveable { mutableStateOf(WorkbenchPage.HOME.name) }
+    var hasAutoRequestedPermissions by rememberSaveable { mutableStateOf(false) }
+    val scrollState = rememberScrollState()
 
     var robotName by rememberSaveable { mutableStateOf("") }
     var robotWebhook by rememberSaveable { mutableStateOf("") }
@@ -113,6 +123,7 @@ private fun ConfigurationWorkbench(container: AppContainer) {
     var robotType by rememberSaveable { mutableStateOf(RobotType.FEISHU) }
 
     var senderNumber by rememberSaveable { mutableStateOf("") }
+    var selectedCountryRegion by rememberSaveable { mutableStateOf(defaultCountryOption().regionCode) }
     var simulationSenderNumber by rememberSaveable { mutableStateOf("") }
     var simulationMessageBody by rememberSaveable { mutableStateOf("") }
     var keywordText by rememberSaveable { mutableStateOf("") }
@@ -122,6 +133,21 @@ private fun ConfigurationWorkbench(container: AppContainer) {
     var firstRetryDelayText by rememberSaveable { mutableStateOf("10") }
     var secondRetryDelayText by rememberSaveable { mutableStateOf("30") }
     var thirdRetryDelayText by rememberSaveable { mutableStateOf("60") }
+    var retryPolicyExpanded by rememberSaveable { mutableStateOf(false) }
+    var simulationExpanded by rememberSaveable { mutableStateOf(false) }
+    var retryPolicySectionOffset by remember { mutableStateOf(0) }
+    var simulationSectionOffset by remember { mutableStateOf(0) }
+
+    var editingRobotId by rememberSaveable { mutableStateOf<Long?>(null) }
+    var editingRobotCreatedAt by rememberSaveable { mutableStateOf(0L) }
+    var showRobotDialog by rememberSaveable { mutableStateOf(false) }
+    var pendingDeleteRobotId by rememberSaveable { mutableStateOf<Long?>(null) }
+    var blockedRobotName by rememberSaveable { mutableStateOf<String?>(null) }
+
+    var editingRuleId by rememberSaveable { mutableStateOf<Long?>(null) }
+    var editingRuleCreatedAt by rememberSaveable { mutableStateOf(0L) }
+    var showRuleDialog by rememberSaveable { mutableStateOf(false) }
+    var pendingDeleteRuleId by rememberSaveable { mutableStateOf<Long?>(null) }
 
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions(),
@@ -169,15 +195,88 @@ private fun ConfigurationWorkbench(container: AppContainer) {
         monitoringServiceRunning = readMonitoringServiceRunning(context)
     }
 
+    fun launchPermissionRequest() {
+        val missingPermissions = requiredPermissions(permissionSnapshot)
+        if (missingPermissions.isNotEmpty()) {
+            hasAutoRequestedPermissions = true
+            permissionLauncher.launch(missingPermissions)
+        }
+    }
+
+    fun resetRobotEditor() {
+        editingRobotId = null
+        editingRobotCreatedAt = 0L
+        robotName = ""
+        robotWebhook = ""
+        robotEnabled = true
+        robotType = RobotType.FEISHU
+        showRobotDialog = false
+    }
+
+    fun openRobotCreateDialog() {
+        resetRobotEditor()
+        showRobotDialog = true
+    }
+
+    fun openRobotEditDialog(robot: RobotEndpoint) {
+        editingRobotId = robot.id
+        editingRobotCreatedAt = robot.createdAt
+        robotName = robot.name
+        robotWebhook = robot.webhookUrl
+        robotEnabled = robot.enabled
+        robotType = robot.type
+        showRobotDialog = true
+    }
+
+    fun resetRuleEditor() {
+        editingRuleId = null
+        editingRuleCreatedAt = 0L
+        senderNumber = ""
+        selectedCountryRegion = defaultCountryOption().regionCode
+        keywordText = ""
+        ruleEnabled = true
+        selectedRobotIds.clear()
+        showRuleDialog = false
+    }
+
+    fun openRuleCreateDialog() {
+        resetRuleEditor()
+        showRuleDialog = true
+    }
+
+    fun openRuleEditDialog(rule: SenderRule) {
+        val numberDraft = splitSenderNumberForEditing(rule.senderNumber)
+        editingRuleId = rule.id
+        editingRuleCreatedAt = rule.createdAt
+        selectedCountryRegion = numberDraft.countryOption.regionCode
+        senderNumber = numberDraft.localNumber
+        keywordText = rule.keywords.joinToString()
+        ruleEnabled = rule.enabled
+        selectedRobotIds.clear()
+        selectedRobotIds.addAll(rule.selectedRobotIds)
+        showRuleDialog = true
+    }
     LaunchedEffect(Unit) {
         reloadData()
     }
 
+    LaunchedEffect(permissionSnapshot, hasAutoRequestedPermissions) {
+        if (permissionSnapshot.canStartMonitoring) {
+            hasAutoRequestedPermissions = false
+        } else if (shouldAutoRequestPermissions(
+                snapshot = permissionSnapshot,
+                hasRequestedAutomatically = hasAutoRequestedPermissions,
+            )
+        ) {
+            launchPermissionRequest()
+        }
+    }
+
+    val availableCountryOptions = remember { supportedCountryOptions() }
+    val selectedCountryOption = remember(selectedCountryRegion) { findCountryOption(selectedCountryRegion) }
+
     val permissionUiState = remember(context, permissionSnapshot) {
         buildPermissionUiState(context, permissionSnapshot)
-    }
-    val summaries = remember(rules, robots) {
-        summaryUseCase.build(rules = rules, robots = robots)
     }
     val monitoringControlState = remember(monitoringServiceRunning, monitoringTransition) {
         buildMonitoringControlState(
@@ -199,7 +298,7 @@ private fun ConfigurationWorkbench(container: AppContainer) {
                 .fillMaxSize()
                 .padding(innerPadding)
                 .padding(16.dp)
-                .verticalScroll(rememberScrollState()),
+                .verticalScroll(scrollState),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             WorkbenchHeader(
@@ -281,208 +380,347 @@ private fun ConfigurationWorkbench(container: AppContainer) {
                     PermissionCard(
                         uiState = permissionUiState,
                         onRequestPermissions = {
-                            permissionLauncher.launch(requiredPermissions(permissionSnapshot))
+                            launchPermissionRequest()
                         },
                     )
-                    RetryPolicyCard(
-                        firstRetryDelayText = firstRetryDelayText,
-                        onFirstRetryDelayChange = { firstRetryDelayText = it },
-                        secondRetryDelayText = secondRetryDelayText,
-                        onSecondRetryDelayChange = { secondRetryDelayText = it },
-                        thirdRetryDelayText = thirdRetryDelayText,
-                        onThirdRetryDelayChange = { thirdRetryDelayText = it },
-                        onSave = {
-                            scope.launch {
-                                val firstDelay = firstRetryDelayText.toIntOrNull()
-                                val secondDelay = secondRetryDelayText.toIntOrNull()
-                                val thirdDelay = thirdRetryDelayText.toIntOrNull()
-                                if (firstDelay == null || secondDelay == null || thirdDelay == null || firstDelay <= 0 || secondDelay <= 0 || thirdDelay <= 0) {
-                                    statusMessage = context.getString(R.string.status_retry_policy_invalid)
-                                    return@launch
+                    RuleManagementCard(
+                        rules = rules,
+                        robots = robots,
+                        onAdd = { openRuleCreateDialog() },
+                        onEdit = { rule -> openRuleEditDialog(rule) },
+                    )
+                    RobotManagementCard(
+                        robots = robots,
+                        onAdd = { openRobotCreateDialog() },
+                        onEdit = { robot -> openRobotEditDialog(robot) },
+                    )
+                    CollapsibleSectionCard(
+                        modifier = Modifier.onGloballyPositioned { coordinates ->
+                            retryPolicySectionOffset = coordinates.positionInParent().y.toInt()
+                        },
+                        title = stringResource(R.string.retry_policy_title),
+                        expanded = retryPolicyExpanded,
+                        onToggle = {
+                            val willExpand = !retryPolicyExpanded
+                            retryPolicyExpanded = willExpand
+                            if (willExpand) {
+                                scope.launch {
+                                    delay(120L)
+                                    scrollState.animateScrollTo((retryPolicySectionOffset - 120).coerceAtLeast(0))
                                 }
-                                val config = RetryPolicyConfig(
-                                    firstRetryDelaySeconds = firstDelay,
-                                    secondRetryDelaySeconds = secondDelay,
-                                    thirdRetryDelaySeconds = thirdDelay,
-                                )
-                                withContext(Dispatchers.IO) {
-                                    container.settingsRepository.saveRetryPolicyConfig(config)
-                                }
-                                statusMessage = context.getString(
-                                    R.string.status_retry_policy_saved,
-                                    firstDelay,
-                                    secondDelay,
-                                    thirdDelay,
-                                )
-                                reloadData()
                             }
                         },
-                    )
-                    RobotFormCard(
-                        robotName = robotName,
-                        onRobotNameChange = { robotName = it },
-                        robotWebhook = robotWebhook,
-                        onRobotWebhookChange = { robotWebhook = it },
-                        robotEnabled = robotEnabled,
-                        onRobotEnabledChange = { robotEnabled = it },
-                        robotType = robotType,
-                        onRobotTypeChange = { robotType = it },
-                        onSave = {
-                            scope.launch {
-                                val now = System.currentTimeMillis()
-                                val result = withContext(Dispatchers.IO) {
-                                    container.robotRepository.save(
-                                        RobotEndpoint(
+                    ) {
+                        RetryPolicyCard(
+                            firstRetryDelayText = firstRetryDelayText,
+                            onFirstRetryDelayChange = { firstRetryDelayText = it },
+                            secondRetryDelayText = secondRetryDelayText,
+                            onSecondRetryDelayChange = { secondRetryDelayText = it },
+                            thirdRetryDelayText = thirdRetryDelayText,
+                            onThirdRetryDelayChange = { thirdRetryDelayText = it },
+                            showHeader = false,
+                            onSave = {
+                                scope.launch {
+                                    val firstDelay = firstRetryDelayText.toIntOrNull()
+                                    val secondDelay = secondRetryDelayText.toIntOrNull()
+                                    val thirdDelay = thirdRetryDelayText.toIntOrNull()
+                                    if (firstDelay == null || secondDelay == null || thirdDelay == null || firstDelay <= 0 || secondDelay <= 0 || thirdDelay <= 0) {
+                                        statusMessage = context.getString(R.string.status_retry_policy_invalid)
+                                        return@launch
+                                    }
+                                    val config = RetryPolicyConfig(
+                                        firstRetryDelaySeconds = firstDelay,
+                                        secondRetryDelaySeconds = secondDelay,
+                                        thirdRetryDelaySeconds = thirdDelay,
+                                    )
+                                    withContext(Dispatchers.IO) {
+                                        container.settingsRepository.saveRetryPolicyConfig(config)
+                                    }
+                                    statusMessage = context.getString(
+                                        R.string.status_retry_policy_saved,
+                                        firstDelay,
+                                        secondDelay,
+                                        thirdDelay,
+                                    )
+                                    reloadData()
+                                }
+                            },
+                        )
+                    }
+                    if (showRobotDialog) {
+                        val referencedRuleCount = editingRobotId?.let { robotId ->
+                            rules.count { it.selectedRobotIds.contains(robotId) }
+                        } ?: 0
+                        RobotEditorDialog(
+                            isEditMode = editingRobotId != null,
+                            robotName = robotName,
+                            onRobotNameChange = { robotName = it },
+                            robotWebhook = robotWebhook,
+                            onRobotWebhookChange = { robotWebhook = it },
+                            robotEnabled = robotEnabled,
+                            onRobotEnabledChange = { robotEnabled = it },
+                            robotType = robotType,
+                            onRobotTypeChange = { robotType = it },
+                            disableWarningMessage = if (editingRobotId != null && !robotEnabled && referencedRuleCount > 0) {
+                                context.getString(R.string.robot_disable_in_use_warning, referencedRuleCount)
+                            } else {
+                                null
+                            },
+                            onDismiss = { resetRobotEditor() },
+                            onSave = {
+                                scope.launch {
+                                    val isEditMode = editingRobotId != null
+                                    val now = System.currentTimeMillis()
+                                    val result = withContext(Dispatchers.IO) {
+                                        val robot = RobotEndpoint(
+                                            id = editingRobotId ?: 0L,
                                             name = robotName.trim(),
                                             type = robotType,
                                             enabled = robotEnabled,
                                             webhookUrl = robotWebhook.trim(),
-                                            createdAt = now,
+                                            createdAt = if (editingRobotId == null) now else editingRobotCreatedAt,
                                             updatedAt = now,
                                         )
-                                    )
-                                }
-                                when (result) {
-                                    is RepositorySaveResult.Success -> {
-                                        robotName = ""
-                                        robotWebhook = ""
-                                        robotEnabled = true
-                                        robotType = RobotType.FEISHU
-                                        statusMessage = context.getString(R.string.status_robot_saved, result.value.name)
-                                        reloadData()
+                                        if (editingRobotId == null) {
+                                            container.robotRepository.save(robot)
+                                        } else {
+                                            container.robotRepository.update(robot)
+                                        }
                                     }
-
-                                    RepositorySaveResult.DuplicateName -> {
-                                        statusMessage = context.getString(R.string.status_robot_duplicate)
-                                    }
-
-                                    else -> {
-                                        statusMessage = context.getString(R.string.status_robot_save_failed)
+                                    when (result) {
+                                        is RepositorySaveResult.Success -> {
+                                            val savedName = result.value.name
+                                            resetRobotEditor()
+                                            statusMessage = context.getString(
+                                                if (isEditMode) R.string.status_robot_updated else R.string.status_robot_saved,
+                                                savedName,
+                                            )
+                                            reloadData()
+                                        }
+                                        RepositorySaveResult.DuplicateName -> {
+                                            statusMessage = context.getString(R.string.status_robot_duplicate)
+                                        }
+                                        else -> {
+                                            statusMessage = context.getString(R.string.status_robot_save_failed)
+                                        }
                                     }
                                 }
-                            }
-                        }
-                    )
-                    RuleFormCard(
-                        senderNumber = senderNumber,
-                        onSenderNumberChange = { senderNumber = it },
-                        keywordText = keywordText,
-                        onKeywordTextChange = { keywordText = it },
-                        ruleEnabled = ruleEnabled,
-                        onRuleEnabledChange = { ruleEnabled = it },
-                        robots = robots,
-                        selectedRobotIds = selectedRobotIds,
-                        onToggleRobot = { robotId, checked ->
-                            if (checked) {
-                                if (!selectedRobotIds.contains(robotId)) {
-                                    selectedRobotIds.add(robotId)
+                            },
+                            onDelete = editingRobotId?.let {
+                                {
+                                    val currentRobot = robots.firstOrNull { robot -> robot.id == it }
+                                    if (currentRobot != null) {
+                                        if (canDeleteRobot(currentRobot.id, rules)) {
+                                            pendingDeleteRobotId = currentRobot.id
+                                        } else {
+                                            blockedRobotName = currentRobot.name
+                                        }
+                                    }
                                 }
-                            } else {
-                                selectedRobotIds.remove(robotId)
-                            }
-                        },
-                        onSave = {
-                            scope.launch {
-                                val now = System.currentTimeMillis()
-                                val keywords = keywordText.split(',').map { it.trim() }.filter { it.isNotEmpty() }
-                                val result = withContext(Dispatchers.IO) {
-                                    container.senderRuleRepository.save(
-                                        SenderRule(
-                                            senderNumber = senderNumber.trim(),
+                            },
+                        )
+                    }
+                    if (showRuleDialog) {
+                        RuleEditorDialog(
+                            isEditMode = editingRuleId != null,
+                            countryOptions = availableCountryOptions,
+                            selectedCountry = selectedCountryOption,
+                            onCountrySelected = { selectedCountryRegion = it.regionCode },
+                            localNumber = senderNumber,
+                            onLocalNumberChange = { senderNumber = it },
+                            keywordText = keywordText,
+                            onKeywordTextChange = { keywordText = it },
+                            ruleEnabled = ruleEnabled,
+                            onRuleEnabledChange = { ruleEnabled = it },
+                            robots = robots,
+                            selectedRobotIds = selectedRobotIds,
+                            onToggleRobot = { robotId, checked ->
+                                if (checked) {
+                                    if (!selectedRobotIds.contains(robotId)) {
+                                        selectedRobotIds.add(robotId)
+                                    }
+                                } else {
+                                    selectedRobotIds.remove(robotId)
+                                }
+                            },
+                            onDismiss = { resetRuleEditor() },
+                            onSave = {
+                                scope.launch {
+                                    val isEditMode = editingRuleId != null
+                                    val now = System.currentTimeMillis()
+                                    val keywords = keywordText.split(',').map { it.trim() }.filter { it.isNotEmpty() }
+                                    val result = withContext(Dispatchers.IO) {
+                                        val rule = SenderRule(
+                                            id = editingRuleId ?: 0L,
+                                            senderNumber = buildRuleSenderNumber(countryOption = selectedCountryOption, localNumber = senderNumber),
                                             enabled = ruleEnabled,
                                             keywords = keywords,
                                             selectedRobotIds = selectedRobotIds.toList(),
-                                            createdAt = now,
+                                            createdAt = if (editingRuleId == null) now else editingRuleCreatedAt,
                                             updatedAt = now,
                                         )
-                                    )
+                                        if (editingRuleId == null) {
+                                            container.senderRuleRepository.save(rule)
+                                        } else {
+                                            container.senderRuleRepository.update(rule)
+                                        }
+                                    }
+                                    when (result) {
+                                        is RepositorySaveResult.Success -> {
+                                            val savedSender = result.value.senderNumber
+                                            resetRuleEditor()
+                                            statusMessage = context.getString(
+                                                if (isEditMode) R.string.status_rule_updated else R.string.status_rule_saved,
+                                                savedSender,
+                                            )
+                                            reloadData()
+                                        }
+                                        RepositorySaveResult.DuplicateSenderNumber -> {
+                                            statusMessage = context.getString(R.string.status_rule_duplicate)
+                                        }
+                                        else -> {
+                                            statusMessage = context.getString(R.string.status_rule_save_failed)
+                                        }
+                                    }
                                 }
-                                when (result) {
-                                    is RepositorySaveResult.Success -> {
-                                        senderNumber = ""
-                                        keywordText = ""
-                                        ruleEnabled = true
-                                        selectedRobotIds.clear()
-                                        statusMessage = context.getString(R.string.status_rule_saved, result.value.senderNumber)
-                                        reloadData()
-                                    }
-
-                                    RepositorySaveResult.DuplicateSenderNumber -> {
-                                        statusMessage = context.getString(R.string.status_rule_duplicate)
-                                    }
-
-                                    else -> {
-                                        statusMessage = context.getString(R.string.status_rule_save_failed)
-                                    }
+                            },
+                            onDelete = editingRuleId?.let { id -> { pendingDeleteRuleId = id } },
+                        )
+                    }
+                    pendingDeleteRobotId?.let { robotId ->
+                        val robotNameToDelete = robots.firstOrNull { robot -> robot.id == robotId }?.name.orEmpty()
+                        ConfirmDeleteDialog(
+                            title = context.getString(R.string.delete_confirm_title),
+                            message = context.getString(R.string.delete_robot_confirm_message, robotNameToDelete),
+                            onConfirm = {
+                                scope.launch {
+                                    withContext(Dispatchers.IO) { container.robotRepository.deleteById(robotId) }
+                                    pendingDeleteRobotId = null
+                                    resetRobotEditor()
+                                    statusMessage = context.getString(R.string.status_robot_deleted, robotNameToDelete)
+                                    reloadData()
+                                }
+                            },
+                            onDismiss = { pendingDeleteRobotId = null },
+                        )
+                    }
+                    pendingDeleteRuleId?.let { ruleId ->
+                        val senderNumberToDelete = rules.firstOrNull { rule -> rule.id == ruleId }?.senderNumber.orEmpty()
+                        ConfirmDeleteDialog(
+                            title = context.getString(R.string.delete_confirm_title),
+                            message = context.getString(R.string.delete_rule_confirm_message, senderNumberToDelete),
+                            onConfirm = {
+                                scope.launch {
+                                    withContext(Dispatchers.IO) { container.senderRuleRepository.deleteById(ruleId) }
+                                    pendingDeleteRuleId = null
+                                    resetRuleEditor()
+                                    statusMessage = context.getString(R.string.status_rule_deleted, senderNumberToDelete)
+                                    reloadData()
+                                }
+                            },
+                            onDismiss = { pendingDeleteRuleId = null },
+                        )
+                    }
+                    blockedRobotName?.let {
+                        InfoDialog(
+                            title = context.getString(R.string.delete_blocked_title),
+                            message = context.getString(R.string.delete_robot_blocked_message),
+                            onDismiss = { blockedRobotName = null },
+                        )
+                    }
+                    CollapsibleSectionCard(
+                        modifier = Modifier.onGloballyPositioned { coordinates ->
+                            simulationSectionOffset = coordinates.positionInParent().y.toInt()
+                        },
+                        title = stringResource(R.string.simulation_title),
+                        expanded = simulationExpanded,
+                        onToggle = {
+                            val willExpand = !simulationExpanded
+                            simulationExpanded = willExpand
+                            if (willExpand) {
+                                scope.launch {
+                                    delay(120L)
+                                    scrollState.animateScrollTo((simulationSectionOffset - 120).coerceAtLeast(0))
                                 }
                             }
-                        }
-                    )
-                    ConfigurationSummaryCard(robots = robots, summaries = summaries)
-                    SimulationInjectionCard(
-                        senderNumber = simulationSenderNumber,
-                        onSenderNumberChange = { simulationSenderNumber = it },
-                        messageBody = simulationMessageBody,
-                        onMessageBodyChange = { simulationMessageBody = it },
-                        onInject = {
-                            when (val validation = validateSimulationInjectionInput(context, simulationSenderNumber, simulationMessageBody)) {
-                                is SimulationInjectionValidation.Invalid -> {
-                                    statusMessage = validation.reason
-                                }
-                                is SimulationInjectionValidation.Valid -> {
-                                    MonitoringForegroundService.enqueueSimulation(
+                        },
+                    ) {
+                        SimulationInjectionCard(
+                            senderNumber = simulationSenderNumber,
+                            onSenderNumberChange = { simulationSenderNumber = it },
+                            messageBody = simulationMessageBody,
+                            onMessageBodyChange = { simulationMessageBody = it },
+                            showHeader = false,
+                            onInject = {
+                                scope.launch {
+                                    when (val validation = validateSimulationInjectionInput(
                                         context = context,
-                                        senderNumber = validation.request.senderNumber,
-                                        messageBody = validation.request.messageBody,
-                                    )
-                                    simulationSenderNumber = ""
-                                    simulationMessageBody = ""
-                                    statusMessage = context.getString(
-                                        R.string.status_simulation_enqueued,
-                                        validation.request.senderNumber,
-                                    )
-                                    scope.launch {
-                                        listOf(250L, 1500L).forEach { refreshDelay ->
-                                            delay(refreshDelay)
+                                        senderNumber = simulationSenderNumber,
+                                        messageBody = simulationMessageBody,
+                                    )) {
+                                        is SimulationInjectionValidation.Invalid -> {
+                                            statusMessage = validation.reason
+                                        }
+
+                                        is SimulationInjectionValidation.Valid -> {
+                                            MonitoringForegroundService.enqueueSimulation(
+                                                context = context,
+                                                senderNumber = validation.request.senderNumber,
+                                                messageBody = validation.request.messageBody,
+                                            )
+                                            statusMessage = context.getString(
+                                                R.string.status_simulation_enqueued,
+                                                validation.request.senderNumber,
+                                            )
+                                            delay(400L)
                                             reloadData()
                                         }
                                     }
                                 }
-                            }
-                        },
-                    )
+                            },
+                        )
+                    }
                 }
             }
         }
     }
 }
 
-private fun readMonitoringServiceRunning(context: Context): Boolean {
-    val activityManager = context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
-    @Suppress("DEPRECATION")
-    return activityManager.getRunningServices(Int.MAX_VALUE).any { serviceInfo ->
-        serviceInfo.service.className == MonitoringForegroundService::class.java.name && serviceInfo.foreground
+@Composable
+private fun CollapsibleSectionCard(
+    modifier: Modifier = Modifier,
+    title: String,
+    expanded: Boolean,
+    onToggle: () -> Unit,
+    content: @Composable () -> Unit,
+) {
+    Card(modifier = modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                TextButton(onClick = onToggle) {
+                    Text(
+                        stringResource(
+                            if (expanded) R.string.action_collapse else R.string.action_expand,
+                        ),
+                    )
+                }
+            }
+            if (expanded) {
+                content()
+            }
+        }
     }
 }
 
-private fun readPermissionSnapshot(context: Context): AppPermissionSnapshot {
-    val notificationRequired = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
-    fun isGranted(permission: String): Boolean {
-        return ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED
-    }
-    return AppPermissionSnapshot(
-        receiveSmsGranted = isGranted(Manifest.permission.RECEIVE_SMS),
-        readSmsGranted = isGranted(Manifest.permission.READ_SMS),
-        postNotificationsGranted = if (notificationRequired) isGranted(Manifest.permission.POST_NOTIFICATIONS) else true,
-        notificationPermissionRequired = notificationRequired,
-    )
-}
-
-private fun requiredPermissions(snapshot: AppPermissionSnapshot): Array<String> = buildList {
-    if (!snapshot.receiveSmsGranted) add(Manifest.permission.RECEIVE_SMS)
-    if (!snapshot.readSmsGranted) add(Manifest.permission.READ_SMS)
-    if (snapshot.notificationPermissionRequired && !snapshot.postNotificationsGranted) add(Manifest.permission.POST_NOTIFICATIONS)
-}.toTypedArray()
 @Composable
 private fun PermissionCard(
     uiState: PermissionUiState,
@@ -563,15 +801,18 @@ private fun RetryPolicyCard(
     onSecondRetryDelayChange: (String) -> Unit,
     thirdRetryDelayText: String,
     onThirdRetryDelayChange: (String) -> Unit,
+    showHeader: Boolean = true,
     onSave: () -> Unit,
 ) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text(
-                stringResource(R.string.retry_policy_title),
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
-            )
+            if (showHeader) {
+                Text(
+                    stringResource(R.string.retry_policy_title),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                )
+            }
             Text(
                 stringResource(R.string.retry_policy_description),
                 style = MaterialTheme.typography.bodySmall,
@@ -756,15 +997,18 @@ private fun SimulationInjectionCard(
     onSenderNumberChange: (String) -> Unit,
     messageBody: String,
     onMessageBodyChange: (String) -> Unit,
+    showHeader: Boolean = true,
     onInject: () -> Unit,
 ) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text(
-                stringResource(R.string.simulation_title),
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
-            )
+            if (showHeader) {
+                Text(
+                    stringResource(R.string.simulation_title),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                )
+            }
             Text(
                 stringResource(R.string.simulation_description),
                 style = MaterialTheme.typography.bodySmall,
@@ -981,6 +1225,58 @@ private fun FilterChipRow(
         }
     }
 }
+
+private fun readPermissionSnapshot(context: Context): AppPermissionSnapshot {
+    return AppPermissionSnapshot(
+        receiveSmsGranted = ContextCompat.checkSelfPermission(
+            context,
+            Manifest.permission.RECEIVE_SMS,
+        ) == PackageManager.PERMISSION_GRANTED,
+        readSmsGranted = ContextCompat.checkSelfPermission(
+            context,
+            Manifest.permission.READ_SMS,
+        ) == PackageManager.PERMISSION_GRANTED,
+        postNotificationsGranted = !requiresNotificationPermission() || ContextCompat.checkSelfPermission(
+            context,
+            Manifest.permission.POST_NOTIFICATIONS,
+        ) == PackageManager.PERMISSION_GRANTED,
+        notificationPermissionRequired = requiresNotificationPermission(),
+    )
+}
+
+private fun readMonitoringServiceRunning(context: Context): Boolean {
+    val activityManager = context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+    @Suppress("DEPRECATION")
+    return activityManager.getRunningServices(Int.MAX_VALUE).any { service ->
+        service.service.className == MonitoringForegroundService::class.java.name
+    }
+}
+
+private fun requiredPermissions(snapshot: AppPermissionSnapshot): Array<String> = buildList {
+    if (!snapshot.receiveSmsGranted) add(Manifest.permission.RECEIVE_SMS)
+    if (!snapshot.readSmsGranted) add(Manifest.permission.READ_SMS)
+    if (snapshot.notificationPermissionRequired && !snapshot.postNotificationsGranted) {
+        add(Manifest.permission.POST_NOTIFICATIONS)
+    }
+}.toTypedArray()
+
+private fun requiresNotificationPermission(): Boolean = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

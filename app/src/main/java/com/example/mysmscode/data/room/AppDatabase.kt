@@ -7,11 +7,21 @@ import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.RoomDatabase
 import androidx.room.Transaction
+import androidx.room.Update
 
 @Dao
 interface RobotEndpointDao {
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insert(robot: RobotEndpointEntity): Long
+
+    @Update(onConflict = OnConflictStrategy.ABORT)
+    suspend fun update(robot: RobotEndpointEntity)
+
+    @Query("DELETE FROM robot_endpoints WHERE id = :id")
+    suspend fun deleteById(id: Long)
+
+    @Query("SELECT * FROM robot_endpoints WHERE id = :id LIMIT 1")
+    suspend fun findById(id: Long): RobotEndpointEntity?
 
     @Query("SELECT * FROM robot_endpoints ORDER BY name")
     suspend fun getAll(): List<RobotEndpointEntity>
@@ -22,8 +32,24 @@ interface SenderRuleDao {
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insert(rule: SenderRuleEntity): Long
 
+    @Update(onConflict = OnConflictStrategy.ABORT)
+    suspend fun update(rule: SenderRuleEntity)
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertCrossRefs(crossRefs: List<SenderRuleRobotCrossRef>)
+
+    @Query("DELETE FROM sender_rule_robot_cross_ref WHERE sender_rule_id = :senderRuleId")
+    suspend fun deleteCrossRefsForRule(senderRuleId: Long)
+
+    @Query("DELETE FROM sender_rules WHERE id = :id")
+    suspend fun deleteById(id: Long)
+
+    @Query("SELECT COUNT(*) FROM sender_rule_robot_cross_ref WHERE robot_endpoint_id = :robotId")
+    suspend fun countRulesUsingRobot(robotId: Long): Int
+
+    @Transaction
+    @Query("SELECT * FROM sender_rules WHERE id = :id LIMIT 1")
+    suspend fun findById(id: Long): SenderRuleWithRobots?
 
     @Transaction
     @Query("SELECT * FROM sender_rules WHERE sender_number = :senderNumber LIMIT 1")
@@ -166,3 +192,4 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun retryPolicyConfigDao(): RetryPolicyConfigDao
     abstract fun processingDao(): ProcessingDao
 }
+
