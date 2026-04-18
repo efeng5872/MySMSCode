@@ -134,6 +134,26 @@ data class RetryScheduleDecision(
     val nextRetryAt: Long?,
 )
 
+sealed interface RetrySchedulingPlan {
+    data object Cancel : RetrySchedulingPlan
+
+    data class Schedule(
+        val triggerAtMillis: Long,
+    ) : RetrySchedulingPlan
+}
+
+fun buildRetrySchedulingPlan(
+    nextRetryAt: Long?,
+    now: Long,
+): RetrySchedulingPlan {
+    if (nextRetryAt == null) {
+        return RetrySchedulingPlan.Cancel
+    }
+    return RetrySchedulingPlan.Schedule(
+        triggerAtMillis = maxOf(nextRetryAt, now),
+    )
+}
+
 data class ProcessingOutcomeDraft(
     val record: SmsRecordDraft,
     val attempts: List<ForwardAttemptDraft>,

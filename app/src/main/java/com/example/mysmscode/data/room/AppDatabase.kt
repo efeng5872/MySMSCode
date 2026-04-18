@@ -70,6 +70,15 @@ interface RetryPolicyConfigDao {
 }
 
 @Dao
+interface MonitoringStateDao {
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun save(state: MonitoringStateEntity)
+
+    @Query("SELECT * FROM monitoring_state WHERE id = 1 LIMIT 1")
+    suspend fun get(): MonitoringStateEntity?
+}
+
+@Dao
 interface ProcessingDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertRecord(record: SmsRecordEntity): Long
@@ -165,6 +174,23 @@ interface ProcessingDao {
 
     @Query(
         """
+        SELECT MIN(fa.next_retry_at)
+        FROM forward_attempts fa
+        WHERE fa.status = 'FAILED'
+          AND fa.recoverable = 1
+          AND fa.next_retry_at IS NOT NULL
+          AND fa.attempt_number = (
+              SELECT MAX(inner_fa.attempt_number)
+              FROM forward_attempts inner_fa
+              WHERE inner_fa.sms_record_id = fa.sms_record_id
+                AND inner_fa.robot_endpoint_id = fa.robot_endpoint_id
+          )
+        """
+    )
+    suspend fun getNextRetryAt(): Long?
+
+    @Query(
+        """
         UPDATE sms_records
         SET processing_status = :status,
             failure_reason = :failureReason
@@ -179,17 +205,19 @@ interface ProcessingDao {
         RobotEndpointEntity::class,
         SenderRuleEntity::class,
         RetryPolicyConfigEntity::class,
+        MonitoringStateEntity::class,
         SenderRuleRobotCrossRef::class,
         SmsRecordEntity::class,
         ForwardAttemptEntity::class,
     ],
-    version = 4,
+    version = 5,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {
     abstract fun robotEndpointDao(): RobotEndpointDao
     abstract fun senderRuleDao(): SenderRuleDao
     abstract fun retryPolicyConfigDao(): RetryPolicyConfigDao
+    abstract fun monitoringStateDao(): MonitoringStateDao
     abstract fun processingDao(): ProcessingDao
 }
 

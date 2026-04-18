@@ -3,9 +3,13 @@ package com.example.mysmscode
 import android.Manifest
 import android.app.ActivityManager
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.PowerManager
+import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -59,6 +63,8 @@ import com.example.mysmscode.domain.ConfigurationRuleSummary
 import com.example.mysmscode.domain.FailedRetryFilterOption
 import com.example.mysmscode.domain.HistoryFilterOption
 import com.example.mysmscode.domain.MonitoringControlTransition
+import com.example.mysmscode.domain.MonitoringPersistenceState
+import com.example.mysmscode.domain.MonitoringRecoveryTrigger
 import com.example.mysmscode.domain.PermissionUiState
 import com.example.mysmscode.domain.RetryPolicyConfig
 import com.example.mysmscode.domain.RetryableAttempt
@@ -88,6 +94,7 @@ import com.example.mysmscode.domain.supportedCountryOptions
 import com.example.mysmscode.domain.formatRetryTimestamp
 import com.example.mysmscode.domain.preloadCountryOptions
 import com.example.mysmscode.domain.receivedAtLabel
+import com.example.mysmscode.domain.statusLabel
 import com.example.mysmscode.ui.theme.MySMSCodeTheme
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -118,6 +125,7 @@ private fun ConfigurationWorkbench(container: AppContainer) {
     var retryPolicyConfig by remember { mutableStateOf(RetryPolicyConfig.default()) }
     var permissionSnapshot by remember { mutableStateOf(readPermissionSnapshot(context)) }
     var monitoringServiceRunning by remember { mutableStateOf(readMonitoringServiceRunning(context)) }
+    var monitoringPersistenceState by remember { mutableStateOf(MonitoringPersistenceState()) }
     var monitoringTransition by remember { mutableStateOf(MonitoringControlTransition.IDLE) }
     var isLoading by remember { mutableStateOf(true) }
     var statusMessage by remember { mutableStateOf("") }
@@ -160,6 +168,8 @@ private fun ConfigurationWorkbench(container: AppContainer) {
     var editingRuleCreatedAt by rememberSaveable { mutableStateOf(0L) }
     var showRuleDialog by rememberSaveable { mutableStateOf(false) }
     var pendingDeleteRuleId by rememberSaveable { mutableStateOf<Long?>(null) }
+    var showHonorKeepaliveGuide by rememberSaveable { mutableStateOf(false) }
+    var keepaliveDialogMessage by rememberSaveable { mutableStateOf<String?>(null) }
 
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions(),
@@ -182,11 +192,13 @@ private fun ConfigurationWorkbench(container: AppContainer) {
         val reloadedRecentRecords = withContext(Dispatchers.IO) { container.processingRepository.getRecentRecords(limit = 10) }
         val reloadedFailedAttempts = withContext(Dispatchers.IO) { container.processingRepository.getRetryableFailedAttempts(limit = 20) }
         val reloadedRetryPolicyConfig = withContext(Dispatchers.IO) { container.settingsRepository.getRetryPolicyConfig() }
+        val reloadedMonitoringState = withContext(Dispatchers.IO) { container.settingsRepository.getMonitoringState() }
         robots = reloadedRobots
         rules = reloadedRules
         recentRecords = reloadedRecentRecords
         failedAttempts = reloadedFailedAttempts
         retryPolicyConfig = reloadedRetryPolicyConfig
+        monitoringPersistenceState = reloadedMonitoringState
         permissionSnapshot = readPermissionSnapshot(context)
         monitoringServiceRunning = readMonitoringServiceRunning(context)
         firstRetryDelayText = reloadedRetryPolicyConfig.firstRetryDelaySeconds.toString()
@@ -195,16 +207,27 @@ private fun ConfigurationWorkbench(container: AppContainer) {
         isLoading = false
     }
 
-    suspend fun syncMonitoringState(expectedRunning: Boolean) {
+    suspend fun syncMonitoringState(expectedRunning: Boolean): MonitoringPersistenceState {
+        var latestState = monitoringPersistenceState
         repeat(8) {
             val isRunning = readMonitoringServiceRunning(context)
+            latestState = withContext(Dispatchers.IO) { container.settingsRepository.getMonitoringState() }
             monitoringServiceRunning = isRunning
-            if (isRunning == expectedRunning) {
-                return
+            monitoringPersistenceState = latestState
+            val persistenceMatches = if (expectedRunning) {
+                latestState.monitoringEnabled && !latestState.stoppedByUser
+            } else {
+                !latestState.monitoringEnabled && latestState.stoppedByUser
+            }
+            if (isRunning == expectedRunning && persistenceMatches) {
+                return latestState
             }
             delay(250L)
         }
         monitoringServiceRunning = readMonitoringServiceRunning(context)
+        latestState = withContext(Dispatchers.IO) { container.settingsRepository.getMonitoringState() }
+        monitoringPersistenceState = latestState
+        return latestState
     }
 
     suspend fun performSimulationInjection(request: SimulationInjectionRequest) {
@@ -407,10 +430,18 @@ private fun ConfigurationWorkbench(container: AppContainer) {
                             scope.launch {
                                 when {
                                     monitoringServiceRunning -> {
+                                        val requestedAt = System.currentTimeMillis()
                                         monitoringTransition = MonitoringControlTransition.STOPPING
                                         statusMessage = context.getString(R.string.status_monitoring_stopping)
                                         MonitoringForegroundService.stopMonitoring(context)
                                         syncMonitoringState(expectedRunning = false)
+                                        if (!monitoringServiceRunning) {
+                                            monitoringPersistenceState = monitoringPersistenceState.copy(
+                                                monitoringEnabled = false,
+                                                stoppedByUser = true,
+                                                lastMonitoringStoppedAt = monitoringPersistenceState.lastMonitoringStoppedAt ?: requestedAt,
+                                            )
+                                        }
                                         statusMessage = resolveMonitoringStatusMessage(
                                             transition = MonitoringControlTransition.STOPPING,
                                             isServiceRunning = monitoringServiceRunning,
@@ -427,10 +458,18 @@ private fun ConfigurationWorkbench(container: AppContainer) {
                                     }
 
                                     else -> {
+                                        val requestedAt = System.currentTimeMillis()
                                         monitoringTransition = MonitoringControlTransition.STARTING
                                         statusMessage = context.getString(R.string.status_monitoring_requested)
                                         MonitoringForegroundService.startMonitoring(context)
                                         syncMonitoringState(expectedRunning = true)
+                                        if (monitoringServiceRunning) {
+                                            monitoringPersistenceState = monitoringPersistenceState.copy(
+                                                monitoringEnabled = true,
+                                                stoppedByUser = false,
+                                                lastMonitoringStartedAt = monitoringPersistenceState.lastMonitoringStartedAt ?: requestedAt,
+                                            )
+                                        }
                                         statusMessage = resolveMonitoringStatusMessage(
                                             transition = MonitoringControlTransition.STARTING,
                                             isServiceRunning = monitoringServiceRunning,
@@ -468,6 +507,62 @@ private fun ConfigurationWorkbench(container: AppContainer) {
                         onRequestPermissions = {
                             launchPermissionRequest()
                         },
+                    )
+                    KeepaliveGuideCard(
+                        monitoringState = monitoringPersistenceState,
+                        isServiceRunning = monitoringServiceRunning,
+                        isIgnoringBatteryOptimizations = isIgnoringBatteryOptimizations(context),
+                        notificationsReady = permissionSnapshot.postNotificationsGranted,
+                        onOpenBatterySettings = {
+                            if (isIgnoringBatteryOptimizations(context)) {
+                                keepaliveDialogMessage = context.getString(R.string.keepalive_battery_already_optimized)
+                                return@KeepaliveGuideCard
+                            }
+                            val opened = openIntentSafely(
+                                context,
+                                Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                                    data = Uri.parse("package:${context.packageName}")
+                                },
+                            ) || openIntentSafely(
+                                context,
+                                Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS),
+                            ) || openIntentSafely(
+                                context,
+                                Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                                    data = Uri.parse("package:${context.packageName}")
+                                },
+                            )
+                            if (!opened) {
+                                keepaliveDialogMessage = context.getString(R.string.keepalive_open_battery_settings_failed)
+                            }
+                        },
+                        onOpenNotificationSettings = {
+                            openIntentSafely(
+                                context,
+                                Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
+                                    putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
+                                },
+                            ) || openIntentSafely(
+                                context,
+                                Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                                    data = Uri.parse("package:${context.packageName}")
+                                },
+                            )
+                        },
+                        onOpenAppDetails = {
+                            openIntentSafely(
+                                context,
+                                Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                                    data = Uri.parse("package:${context.packageName}")
+                                },
+                            )
+                        },
+                        onOpenHonorGuide = { showHonorKeepaliveGuide = true },
+                    )
+                    DiagnosticsCard(
+                        monitoringState = monitoringPersistenceState,
+                        latestRecord = recentRecords.firstOrNull(),
+                        nextRetryAt = failedAttempts.mapNotNull { it.nextRetryAt }.minOrNull(),
                     )
                     RuleManagementCard(
                         rules = rules,
@@ -761,6 +856,20 @@ private fun ConfigurationWorkbench(container: AppContainer) {
                             },
                         )
                     }
+                    if (showHonorKeepaliveGuide) {
+                        InfoDialog(
+                            title = context.getString(R.string.keepalive_honor_dialog_title),
+                            message = context.getString(R.string.keepalive_honor_dialog_message),
+                            onDismiss = { showHonorKeepaliveGuide = false },
+                        )
+                    }
+                    keepaliveDialogMessage?.let { message ->
+                        InfoDialog(
+                            title = context.getString(R.string.keepalive_battery_dialog_title),
+                            message = message,
+                            onDismiss = { keepaliveDialogMessage = null },
+                        )
+                    }
                 }
             }
         }
@@ -823,6 +932,171 @@ private fun PermissionCard(
             ) {
                 Text(uiState.actionLabel)
             }
+        }
+    }
+}
+
+@Composable
+private fun KeepaliveGuideCard(
+    monitoringState: MonitoringPersistenceState,
+    isServiceRunning: Boolean,
+    isIgnoringBatteryOptimizations: Boolean,
+    notificationsReady: Boolean,
+    onOpenBatterySettings: () -> Unit,
+    onOpenNotificationSettings: () -> Unit,
+    onOpenAppDetails: () -> Unit,
+    onOpenHonorGuide: () -> Unit,
+) {
+    val monitoringEnabled = monitoringState.monitoringEnabled || isServiceRunning
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text(
+                text = stringResource(R.string.keepalive_title),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text(
+                text = stringResource(R.string.keepalive_description),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Text(
+                text = stringResource(
+                    R.string.keepalive_monitoring_state,
+                    stringResource(
+                        if (monitoringEnabled) R.string.keepalive_state_enabled
+                        else R.string.keepalive_state_disabled
+                    ),
+                ),
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            Text(
+                text = stringResource(
+                    R.string.keepalive_service_state,
+                    stringResource(
+                        if (isServiceRunning) R.string.keepalive_state_running
+                        else R.string.keepalive_state_not_running
+                    ),
+                ),
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            Text(
+                text = stringResource(
+                    R.string.keepalive_battery_state,
+                    stringResource(
+                        if (isIgnoringBatteryOptimizations) R.string.keepalive_state_completed
+                        else R.string.keepalive_state_pending
+                    ),
+                ),
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            Text(
+                text = stringResource(
+                    R.string.keepalive_notification_state,
+                    stringResource(
+                        if (notificationsReady) R.string.keepalive_state_completed
+                        else R.string.keepalive_state_pending
+                    ),
+                ),
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            Text(
+                text = stringResource(R.string.keepalive_honor_hint),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Button(onClick = onOpenBatterySettings) {
+                    Text(stringResource(R.string.keepalive_open_battery_settings))
+                }
+                Button(onClick = onOpenNotificationSettings) {
+                    Text(stringResource(R.string.keepalive_open_notification_settings))
+                }
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                TextButton(onClick = onOpenAppDetails) {
+                    Text(stringResource(R.string.keepalive_open_app_details))
+                }
+                TextButton(onClick = onOpenHonorGuide) {
+                    Text(stringResource(R.string.keepalive_open_honor_guide))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DiagnosticsCard(
+    monitoringState: MonitoringPersistenceState,
+    latestRecord: SmsRecordPreview?,
+    nextRetryAt: Long?,
+) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text(
+                text = stringResource(R.string.diagnostics_title),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text(
+                text = stringResource(R.string.diagnostics_description),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Text(
+                text = stringResource(
+                    R.string.diagnostics_last_monitoring_started,
+                    monitoringState.lastMonitoringStartedAt?.let(::formatRetryTimestamp)
+                        ?: stringResource(R.string.diagnostics_not_available),
+                ),
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            Text(
+                text = stringResource(
+                    R.string.diagnostics_last_monitoring_stopped,
+                    monitoringState.lastMonitoringStoppedAt?.let(::formatRetryTimestamp)
+                        ?: stringResource(R.string.diagnostics_not_available),
+                ),
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            Text(
+                text = stringResource(
+                    R.string.diagnostics_last_recovery_started,
+                    monitoringState.lastRecoveryStartedAt?.let(::formatRetryTimestamp)
+                        ?: stringResource(R.string.diagnostics_not_available),
+                ),
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            Text(
+                text = stringResource(
+                    R.string.diagnostics_last_recovery_trigger,
+                    monitoringState.lastRecoveryTrigger?.let(::monitoringRecoveryTriggerLabel)
+                        ?: stringResource(R.string.diagnostics_not_available),
+                ),
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            Text(
+                text = stringResource(
+                    R.string.diagnostics_last_sms_received,
+                    latestRecord?.receivedAtLabel() ?: stringResource(R.string.diagnostics_not_available),
+                ),
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            Text(
+                text = stringResource(
+                    R.string.diagnostics_last_sms_summary,
+                    latestRecord?.let { "${it.senderNumber} / ${it.statusLabel()}" }
+                        ?: stringResource(R.string.diagnostics_not_available),
+                ),
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            Text(
+                text = stringResource(
+                    R.string.diagnostics_next_retry,
+                    nextRetryAt?.let(::formatRetryTimestamp) ?: stringResource(R.string.diagnostics_not_available),
+                ),
+                style = MaterialTheme.typography.bodyMedium,
+            )
         }
     }
 }
@@ -1350,6 +1624,29 @@ private fun requiredPermissions(snapshot: AppPermissionSnapshot): Array<String> 
 }.toTypedArray()
 
 private fun requiresNotificationPermission(): Boolean = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
+
+private fun isIgnoringBatteryOptimizations(context: Context): Boolean {
+    val powerManager = context.getSystemService(Context.POWER_SERVICE) as? PowerManager ?: return false
+    return powerManager.isIgnoringBatteryOptimizations(context.packageName)
+}
+
+private fun openIntentSafely(context: Context, intent: Intent): Boolean {
+    val packageManager = context.packageManager
+    val targetIntent = intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    return if (targetIntent.resolveActivity(packageManager) != null) {
+        context.startActivity(targetIntent)
+        true
+    } else {
+        false
+    }
+}
+
+private fun monitoringRecoveryTriggerLabel(trigger: String): String = when (trigger) {
+    MonitoringRecoveryTrigger.BOOT_COMPLETED.name -> "开机恢复"
+    MonitoringRecoveryTrigger.PACKAGE_REPLACED.name -> "应用升级恢复"
+    MonitoringRecoveryTrigger.SERVICE_RECOVERY.name -> "服务异常恢复"
+    else -> trigger
+}
 
 
 

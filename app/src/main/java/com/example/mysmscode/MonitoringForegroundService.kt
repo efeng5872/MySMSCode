@@ -14,18 +14,18 @@ import com.example.mysmscode.domain.ForwardAttemptStatus
 import com.example.mysmscode.domain.ForwardDispatchResult
 import com.example.mysmscode.domain.ForwardMessage
 import com.example.mysmscode.domain.ProcessIncomingSmsUseCase
+import com.example.mysmscode.domain.RetrySchedulingPlan
 import com.example.mysmscode.domain.RetryFailedAttemptUseCase
 import com.example.mysmscode.domain.RetryableAttempt
 import com.example.mysmscode.domain.SmsSource
+import com.example.mysmscode.domain.MonitoringRecoveryTrigger
 import com.example.mysmscode.domain.buildProcessingTrace
+import com.example.mysmscode.domain.buildRetrySchedulingPlan
 import com.example.mysmscode.network.WebhookDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -39,18 +39,15 @@ class MonitoringForegroundService : Service() {
     private val retryFailedAttemptUseCase = RetryFailedAttemptUseCase()
     private val webhookDispatcher = WebhookDispatcher()
     private val retryMutex = Mutex()
-    private var retryLoopJob: Job? = null
 
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
         startForeground(NOTIFICATION_ID, buildNotification(getString(R.string.notification_service_active)))
         DebugTraceLogger.d("service_created action=foreground_start")
-        ensureRetryLoop()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        ensureRetryLoop()
         DebugTraceLogger.d("service_start action=${intent?.action ?: "null"} startId=$startId")
         when (intent?.action) {
             ACTION_PROCESS_SMS -> {
@@ -62,6 +59,7 @@ class MonitoringForegroundService : Service() {
                     serviceScope.launch {
                         handleIncomingSms(senderNumber, messageBody, source)
                         processDueRetries()
+                        syncRetrySchedule()
                     }
                 } else {
                     DebugTraceLogger.w("service_start ignored blank payload for action=$ACTION_PROCESS_SMS")
@@ -72,12 +70,18 @@ class MonitoringForegroundService : Service() {
                 startForeground(NOTIFICATION_ID, buildNotification(getString(R.string.notification_monitoring_started)))
                 DebugTraceLogger.d("service_monitoring_requested")
                 serviceScope.launch {
+                    persistMonitoringStarted(intent.getStringExtra(EXTRA_RECOVERY_TRIGGER))
                     processDueRetries()
+                    syncRetrySchedule()
                 }
             }
 
             ACTION_STOP_MONITORING -> {
                 DebugTraceLogger.d("service_monitoring_stop_requested")
+                serviceScope.launch {
+                    persistMonitoringStoppedByUser()
+                }
+                RetryAlarmScheduler(applicationContext).cancel()
                 stopForeground(STOP_FOREGROUND_REMOVE)
                 showStoppedNotification()
                 stopSelf()
@@ -88,9 +92,17 @@ class MonitoringForegroundService : Service() {
                 if (attemptId > 0L) {
                     serviceScope.launch {
                         handleRetryAttempt(attemptId)
+                        syncRetrySchedule()
                     }
                 } else {
                     DebugTraceLogger.w("service_retry ignored invalid attemptId=$attemptId")
+                }
+            }
+
+            ACTION_PROCESS_DUE_RETRIES -> {
+                serviceScope.launch {
+                    processDueRetries()
+                    syncRetrySchedule()
                 }
             }
         }
@@ -98,7 +110,6 @@ class MonitoringForegroundService : Service() {
     }
 
     override fun onDestroy() {
-        retryLoopJob?.cancel()
         serviceScope.cancel()
         DebugTraceLogger.d("service_destroyed")
         super.onDestroy()
@@ -106,16 +117,32 @@ class MonitoringForegroundService : Service() {
 
     override fun onBind(intent: Intent?): IBinder? = null
 
-    private fun ensureRetryLoop() {
-        if (retryLoopJob?.isActive == true) {
-            return
-        }
-        retryLoopJob = serviceScope.launch {
-            while (isActive) {
-                processDueRetries()
-                delay(RETRY_POLL_INTERVAL_MS)
-            }
-        }
+    private suspend fun persistMonitoringStarted(recoveryTriggerName: String?) {
+        val settingsRepository = (application as MySmsCodeApplication).container.settingsRepository
+        val now = System.currentTimeMillis()
+        val state = settingsRepository.getMonitoringState()
+        settingsRepository.saveMonitoringState(
+            state.copy(
+                monitoringEnabled = true,
+                stoppedByUser = false,
+                lastMonitoringStartedAt = now,
+                lastRecoveryStartedAt = recoveryTriggerName?.let { now },
+                lastRecoveryTrigger = recoveryTriggerName,
+            )
+        )
+    }
+
+    private suspend fun persistMonitoringStoppedByUser() {
+        val settingsRepository = (application as MySmsCodeApplication).container.settingsRepository
+        val now = System.currentTimeMillis()
+        val state = settingsRepository.getMonitoringState()
+        settingsRepository.saveMonitoringState(
+            state.copy(
+                monitoringEnabled = false,
+                stoppedByUser = true,
+                lastMonitoringStoppedAt = now,
+            )
+        )
     }
 
     private suspend fun handleIncomingSms(senderNumber: String, messageBody: String, source: SmsSource) {
@@ -223,6 +250,14 @@ class MonitoringForegroundService : Service() {
         notifyStatus(getString(R.string.notification_retried, failedAttempt.senderNumber, getString(notificationRobotTypeLabelRes(failedAttempt.robotType)), getString(notificationForwardStatusLabelRes(execution.nextAttempt.status))))
     }
 
+    private suspend fun syncRetrySchedule() {
+        val nextRetryAt = (application as MySmsCodeApplication).container.processingRepository.getNextRetryAt()
+        when (val plan = buildRetrySchedulingPlan(nextRetryAt = nextRetryAt, now = System.currentTimeMillis())) {
+            RetrySchedulingPlan.Cancel -> RetryAlarmScheduler(applicationContext).cancel()
+            is RetrySchedulingPlan.Schedule -> RetryAlarmScheduler(applicationContext).schedule(plan.triggerAtMillis)
+        }
+    }
+
 
     private fun com.example.mysmscode.domain.SmsRecordDraft.toPreview(): com.example.mysmscode.domain.SmsRecordPreview =
         com.example.mysmscode.domain.SmsRecordPreview(
@@ -275,15 +310,21 @@ class MonitoringForegroundService : Service() {
         private const val ACTION_STOP_MONITORING = "com.example.mysmscode.action.STOP_MONITORING"
         private const val ACTION_PROCESS_SMS = "com.example.mysmscode.action.PROCESS_SMS"
         private const val ACTION_RETRY_ATTEMPT = "com.example.mysmscode.action.RETRY_ATTEMPT"
+        private const val ACTION_PROCESS_DUE_RETRIES = "com.example.mysmscode.action.PROCESS_DUE_RETRIES"
         private const val EXTRA_SENDER_NUMBER = "extra_sender_number"
         private const val EXTRA_MESSAGE_BODY = "extra_message_body"
         private const val EXTRA_ATTEMPT_ID = "extra_attempt_id"
         private const val EXTRA_SMS_SOURCE = "extra_sms_source"
-        private const val RETRY_POLL_INTERVAL_MS = 30_000L
+        private const val EXTRA_RECOVERY_TRIGGER = "extra_recovery_trigger"
 
         fun startMonitoring(context: Context) {
+            startMonitoring(context, recoveryTrigger = null)
+        }
+
+        fun startMonitoring(context: Context, recoveryTrigger: MonitoringRecoveryTrigger?) {
             val intent = Intent(context, MonitoringForegroundService::class.java).apply {
                 action = ACTION_START_MONITORING
+                putExtra(EXTRA_RECOVERY_TRIGGER, recoveryTrigger?.name)
             }
             ContextCompat.startForegroundService(context, intent)
         }
@@ -317,6 +358,13 @@ class MonitoringForegroundService : Service() {
             val intent = Intent(context, MonitoringForegroundService::class.java).apply {
                 action = ACTION_RETRY_ATTEMPT
                 putExtra(EXTRA_ATTEMPT_ID, attemptId)
+            }
+            ContextCompat.startForegroundService(context, intent)
+        }
+
+        fun processDueRetries(context: Context) {
+            val intent = Intent(context, MonitoringForegroundService::class.java).apply {
+                action = ACTION_PROCESS_DUE_RETRIES
             }
             ContextCompat.startForegroundService(context, intent)
         }

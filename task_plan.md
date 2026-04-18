@@ -59,3 +59,17 @@ Build an Android app that monitors incoming SMS messages from configured sender 
 | KSP conflicted with AGP built-in Kotlin source-set restriction | 1 | Added `android.disallowKotlinSourceSets=false` in `gradle.properties` |
 | Kotlin daemon could not access the default temp marker path | multiple | Gradle fallback compilation still completed successfully with local workspace user-home overrides |
 | Foreground service startup initially crashed on Android 16 because the data-sync foreground permission was missing | 1 | Added `android.permission.FOREGROUND_SERVICE_DATA_SYNC` to the manifest and revalidated on emulator |
+
+## 2026-04-18 Keepalive Design Decisions
+- 新增保活优化方向：通用保活框架 + 荣耀 200 Pro 优先验证。
+- 明确保活实现顺序：恢复机制 -> 重试调度改造 -> 保活设置向导 -> 诊断页。
+- 明确用户手动停止监控后不得自动恢复。
+- 明确现有 30 秒重试轮询将被精确调度替代。
+
+
+- 已完成恢复机制第一版：开机恢复、升级恢复、用户手动停止边界。
+- 已完成重试调度改造第一版：以最早下一次重试时间驱动 AlarmManager 精确调度，替代服务内固定 30 秒轮询。
+- 已完成保活设置向导第一版：配置中心可直接检查电池优化、通知、监控状态，并提供荣耀 200 Pro 专项引导。
+- 已完成保活状态诊断第一版：可查看最近启动/停止/恢复/短信/重试时间，用于排查保活失效原因。
+- 下一步建议进入真机验证，重点检查荣耀 200 Pro 上的保活向导可达性、恢复链路行为和诊断信息可读性。
+

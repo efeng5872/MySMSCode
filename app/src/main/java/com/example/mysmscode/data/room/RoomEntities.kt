@@ -8,6 +8,7 @@ import androidx.room.Index
 import androidx.room.PrimaryKey
 import androidx.room.Relation
 import com.example.mysmscode.domain.RetryPolicyConfig
+import com.example.mysmscode.domain.MonitoringPersistenceState
 import com.example.mysmscode.domain.RobotEndpoint
 import com.example.mysmscode.domain.RobotType
 import com.example.mysmscode.domain.SenderRule
@@ -113,6 +114,44 @@ data class RetryPolicyConfigEntity(
             firstRetryDelaySeconds = domain.firstRetryDelaySeconds,
             secondRetryDelaySeconds = domain.secondRetryDelaySeconds,
             thirdRetryDelaySeconds = domain.thirdRetryDelaySeconds,
+        )
+    }
+}
+
+@Entity(tableName = "monitoring_state")
+data class MonitoringStateEntity(
+    @PrimaryKey
+    val id: Int = 1,
+    @ColumnInfo(name = "monitoring_enabled")
+    val monitoringEnabled: Boolean,
+    @ColumnInfo(name = "stopped_by_user")
+    val stoppedByUser: Boolean,
+    @ColumnInfo(name = "last_monitoring_started_at")
+    val lastMonitoringStartedAt: Long?,
+    @ColumnInfo(name = "last_monitoring_stopped_at")
+    val lastMonitoringStoppedAt: Long?,
+    @ColumnInfo(name = "last_recovery_started_at")
+    val lastRecoveryStartedAt: Long?,
+    @ColumnInfo(name = "last_recovery_trigger")
+    val lastRecoveryTrigger: String?,
+) {
+    fun toDomain(): MonitoringPersistenceState = MonitoringPersistenceState(
+        monitoringEnabled = monitoringEnabled,
+        stoppedByUser = stoppedByUser,
+        lastMonitoringStartedAt = lastMonitoringStartedAt,
+        lastMonitoringStoppedAt = lastMonitoringStoppedAt,
+        lastRecoveryStartedAt = lastRecoveryStartedAt,
+        lastRecoveryTrigger = lastRecoveryTrigger,
+    )
+
+    companion object {
+        fun fromDomain(domain: MonitoringPersistenceState): MonitoringStateEntity = MonitoringStateEntity(
+            monitoringEnabled = domain.monitoringEnabled,
+            stoppedByUser = domain.stoppedByUser,
+            lastMonitoringStartedAt = domain.lastMonitoringStartedAt,
+            lastMonitoringStoppedAt = domain.lastMonitoringStoppedAt,
+            lastRecoveryStartedAt = domain.lastRecoveryStartedAt,
+            lastRecoveryTrigger = domain.lastRecoveryTrigger,
         )
     }
 }

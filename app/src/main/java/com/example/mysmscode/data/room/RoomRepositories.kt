@@ -153,6 +153,8 @@ class RoomProcessingRepository(
     suspend fun getDueRetryableAttempts(now: Long, limit: Int = 20): List<RetryableAttempt> {
         return processingDao.getDueRetryableAttempts(now, limit).map(RetryableAttemptRow::toDomain)
     }
+
+    suspend fun getNextRetryAt(): Long? = processingDao.getNextRetryAt()
 }
 
 private fun SmsRecordDraft.toEntity(): SmsRecordEntity = SmsRecordEntity(
