@@ -43,6 +43,9 @@
     <string name="permission_read_sms">&#x8BFB;&#x53D6;&#x77ED;&#x4FE1;</string>
     <string name="permission_notifications">&#x901A;&#x77E5;&#x6743;&#x9650;</string>
     <string name="keepalive_title">保活设置向导</string>
+    <string name="config_section_status">基础状态</string>
+    <string name="config_section_core">核心配置</string>
+    <string name="config_section_advanced">调试与高级</string>
     <string name="keepalive_description">为了提升大部分 Android 手机上的长期稳定性，建议至少完成电池优化、通知和厂商后台活动设置。</string>
     <string name="keepalive_monitoring_state">监控启用状态：%1$s</string>
     <string name="keepalive_service_state">当前服务状态：%1$s</string>

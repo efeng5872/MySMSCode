@@ -17,6 +17,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -33,6 +34,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
@@ -55,6 +57,7 @@ import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import com.example.mysmscode.data.RepositorySaveResult
@@ -155,6 +158,8 @@ private fun ConfigurationWorkbench(container: AppContainer) {
     var thirdRetryDelayText by rememberSaveable { mutableStateOf("60") }
     var retryPolicyExpanded by rememberSaveable { mutableStateOf(false) }
     var simulationExpanded by rememberSaveable { mutableStateOf(false) }
+    var keepaliveGuideExpanded by rememberSaveable { mutableStateOf(false) }
+    var diagnosticsExpanded by rememberSaveable { mutableStateOf(false) }
     var retryPolicySectionOffset by remember { mutableStateOf(0) }
     var simulationSectionOffset by remember { mutableStateOf(0) }
 
@@ -204,6 +209,13 @@ private fun ConfigurationWorkbench(container: AppContainer) {
         firstRetryDelayText = reloadedRetryPolicyConfig.firstRetryDelaySeconds.toString()
         secondRetryDelayText = reloadedRetryPolicyConfig.secondRetryDelaySeconds.toString()
         thirdRetryDelayText = reloadedRetryPolicyConfig.thirdRetryDelaySeconds.toString()
+        statusMessage = reconcilePassiveMonitoringStatusMessage(
+            context = context,
+            currentMessage = statusMessage,
+            isServiceRunning = monitoringServiceRunning,
+            monitoringState = reloadedMonitoringState,
+            transition = monitoringTransition,
+        )
         isLoading = false
     }
 
@@ -502,68 +514,84 @@ private fun ConfigurationWorkbench(container: AppContainer) {
                 }
 
                 WorkbenchPage.CONFIG -> {
+                    ConfigSectionLabel(title = stringResource(R.string.config_section_status))
                     PermissionCard(
                         uiState = permissionUiState,
                         onRequestPermissions = {
                             launchPermissionRequest()
                         },
                     )
-                    KeepaliveGuideCard(
-                        monitoringState = monitoringPersistenceState,
-                        isServiceRunning = monitoringServiceRunning,
-                        isIgnoringBatteryOptimizations = isIgnoringBatteryOptimizations(context),
-                        notificationsReady = permissionSnapshot.postNotificationsGranted,
-                        onOpenBatterySettings = {
-                            if (isIgnoringBatteryOptimizations(context)) {
-                                keepaliveDialogMessage = context.getString(R.string.keepalive_battery_already_optimized)
-                                return@KeepaliveGuideCard
-                            }
-                            val opened = openIntentSafely(
-                                context,
-                                Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
-                                    data = Uri.parse("package:${context.packageName}")
-                                },
-                            ) || openIntentSafely(
-                                context,
-                                Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS),
-                            ) || openIntentSafely(
-                                context,
-                                Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
-                                    data = Uri.parse("package:${context.packageName}")
-                                },
-                            )
-                            if (!opened) {
-                                keepaliveDialogMessage = context.getString(R.string.keepalive_open_battery_settings_failed)
-                            }
-                        },
-                        onOpenNotificationSettings = {
-                            openIntentSafely(
-                                context,
-                                Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
-                                    putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
-                                },
-                            ) || openIntentSafely(
-                                context,
-                                Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
-                                    data = Uri.parse("package:${context.packageName}")
-                                },
-                            )
-                        },
-                        onOpenAppDetails = {
-                            openIntentSafely(
-                                context,
-                                Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
-                                    data = Uri.parse("package:${context.packageName}")
-                                },
-                            )
-                        },
-                        onOpenHonorGuide = { showHonorKeepaliveGuide = true },
-                    )
-                    DiagnosticsCard(
-                        monitoringState = monitoringPersistenceState,
-                        latestRecord = recentRecords.firstOrNull(),
-                        nextRetryAt = failedAttempts.mapNotNull { it.nextRetryAt }.minOrNull(),
-                    )
+                    CollapsibleSectionCard(
+                        title = stringResource(R.string.keepalive_title),
+                        expanded = keepaliveGuideExpanded,
+                        onToggle = { keepaliveGuideExpanded = !keepaliveGuideExpanded },
+                    ) {
+                        KeepaliveGuideCard(
+                            monitoringState = monitoringPersistenceState,
+                            isServiceRunning = monitoringServiceRunning,
+                            isIgnoringBatteryOptimizations = isIgnoringBatteryOptimizations(context),
+                            notificationsReady = permissionSnapshot.postNotificationsGranted,
+                            showHeader = false,
+                            onOpenBatterySettings = {
+                                if (isIgnoringBatteryOptimizations(context)) {
+                                    keepaliveDialogMessage = context.getString(R.string.keepalive_battery_already_optimized)
+                                    return@KeepaliveGuideCard
+                                }
+                                val opened = openIntentSafely(
+                                    context,
+                                    Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                                        data = Uri.parse("package:${context.packageName}")
+                                    },
+                                ) || openIntentSafely(
+                                    context,
+                                    Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS),
+                                ) || openIntentSafely(
+                                    context,
+                                    Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                                        data = Uri.parse("package:${context.packageName}")
+                                    },
+                                )
+                                if (!opened) {
+                                    keepaliveDialogMessage = context.getString(R.string.keepalive_open_battery_settings_failed)
+                                }
+                            },
+                            onOpenNotificationSettings = {
+                                openIntentSafely(
+                                    context,
+                                    Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
+                                        putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
+                                    },
+                                ) || openIntentSafely(
+                                    context,
+                                    Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                                        data = Uri.parse("package:${context.packageName}")
+                                    },
+                                )
+                            },
+                            onOpenAppDetails = {
+                                openIntentSafely(
+                                    context,
+                                    Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                                        data = Uri.parse("package:${context.packageName}")
+                                    },
+                                )
+                            },
+                            onOpenHonorGuide = { showHonorKeepaliveGuide = true },
+                        )
+                    }
+                    CollapsibleSectionCard(
+                        title = stringResource(R.string.diagnostics_title),
+                        expanded = diagnosticsExpanded,
+                        onToggle = { diagnosticsExpanded = !diagnosticsExpanded },
+                    ) {
+                        DiagnosticsCard(
+                            monitoringState = monitoringPersistenceState,
+                            latestRecord = recentRecords.firstOrNull(),
+                            nextRetryAt = failedAttempts.mapNotNull { it.nextRetryAt }.minOrNull(),
+                            showHeader = false,
+                        )
+                    }
+                    ConfigSectionLabel(title = stringResource(R.string.config_section_core))
                     RuleManagementCard(
                         rules = rules,
                         robots = robots,
@@ -575,6 +603,7 @@ private fun ConfigurationWorkbench(container: AppContainer) {
                         onAdd = { openRobotCreateDialog() },
                         onEdit = { robot -> openRobotEditDialog(robot) },
                     )
+                    ConfigSectionLabel(title = stringResource(R.string.config_section_advanced))
                     CollapsibleSectionCard(
                         modifier = Modifier.onGloballyPositioned { coordinates ->
                             retryPolicySectionOffset = coordinates.positionInParent().y.toInt()
@@ -877,6 +906,16 @@ private fun ConfigurationWorkbench(container: AppContainer) {
 }
 
 @Composable
+private fun ConfigSectionLabel(title: String) {
+    Text(
+        text = title,
+        style = MaterialTheme.typography.titleSmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        fontWeight = FontWeight.SemiBold,
+    )
+}
+
+@Composable
 private fun CollapsibleSectionCard(
     modifier: Modifier = Modifier,
     title: String,
@@ -936,12 +975,31 @@ private fun PermissionCard(
     }
 }
 
+private fun reconcilePassiveMonitoringStatusMessage(
+    context: Context,
+    currentMessage: String,
+    isServiceRunning: Boolean,
+    monitoringState: MonitoringPersistenceState,
+    transition: MonitoringControlTransition,
+): String {
+    if (transition != MonitoringControlTransition.IDLE) {
+        return currentMessage
+    }
+    val startedMessage = context.getString(R.string.status_monitoring_started)
+    return when {
+        currentMessage.isBlank() && isServiceRunning && monitoringState.monitoringEnabled -> startedMessage
+        currentMessage == startedMessage && (!isServiceRunning || !monitoringState.monitoringEnabled) -> ""
+        else -> currentMessage
+    }
+}
+
 @Composable
 private fun KeepaliveGuideCard(
     monitoringState: MonitoringPersistenceState,
     isServiceRunning: Boolean,
     isIgnoringBatteryOptimizations: Boolean,
     notificationsReady: Boolean,
+    showHeader: Boolean = true,
     onOpenBatterySettings: () -> Unit,
     onOpenNotificationSettings: () -> Unit,
     onOpenAppDetails: () -> Unit,
@@ -950,11 +1008,13 @@ private fun KeepaliveGuideCard(
     val monitoringEnabled = monitoringState.monitoringEnabled || isServiceRunning
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text(
-                text = stringResource(R.string.keepalive_title),
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
-            )
+            if (showHeader) {
+                Text(
+                    text = stringResource(R.string.keepalive_title),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                )
+            }
             Text(
                 text = stringResource(R.string.keepalive_description),
                 style = MaterialTheme.typography.bodySmall,
@@ -1005,20 +1065,58 @@ private fun KeepaliveGuideCard(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Button(onClick = onOpenBatterySettings) {
-                    Text(stringResource(R.string.keepalive_open_battery_settings))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                OutlinedButton(
+                    modifier = Modifier.weight(1f),
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 10.dp),
+                    onClick = onOpenBatterySettings,
+                ) {
+                    Text(
+                        text = stringResource(R.string.keepalive_open_battery_settings),
+                        maxLines = 1,
+                        overflow = TextOverflow.Clip,
+                    )
                 }
-                Button(onClick = onOpenNotificationSettings) {
-                    Text(stringResource(R.string.keepalive_open_notification_settings))
+                OutlinedButton(
+                    modifier = Modifier.weight(1f),
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 10.dp),
+                    onClick = onOpenNotificationSettings,
+                ) {
+                    Text(
+                        text = stringResource(R.string.keepalive_open_notification_settings),
+                        maxLines = 1,
+                        overflow = TextOverflow.Clip,
+                    )
                 }
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                TextButton(onClick = onOpenAppDetails) {
-                    Text(stringResource(R.string.keepalive_open_app_details))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                OutlinedButton(
+                    modifier = Modifier.weight(1f),
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 10.dp),
+                    onClick = onOpenAppDetails,
+                ) {
+                    Text(
+                        text = stringResource(R.string.keepalive_open_app_details),
+                        maxLines = 1,
+                        overflow = TextOverflow.Clip,
+                    )
                 }
-                TextButton(onClick = onOpenHonorGuide) {
-                    Text(stringResource(R.string.keepalive_open_honor_guide))
+                OutlinedButton(
+                    modifier = Modifier.weight(1f),
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 10.dp),
+                    onClick = onOpenHonorGuide,
+                ) {
+                    Text(
+                        text = stringResource(R.string.keepalive_open_honor_guide),
+                        maxLines = 1,
+                        overflow = TextOverflow.Clip,
+                    )
                 }
             }
         }
@@ -1030,14 +1128,17 @@ private fun DiagnosticsCard(
     monitoringState: MonitoringPersistenceState,
     latestRecord: SmsRecordPreview?,
     nextRetryAt: Long?,
+    showHeader: Boolean = true,
 ) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text(
-                text = stringResource(R.string.diagnostics_title),
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
-            )
+            if (showHeader) {
+                Text(
+                    text = stringResource(R.string.diagnostics_title),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                )
+            }
             Text(
                 text = stringResource(R.string.diagnostics_description),
                 style = MaterialTheme.typography.bodySmall,
