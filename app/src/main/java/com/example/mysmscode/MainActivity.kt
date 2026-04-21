@@ -43,6 +43,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
@@ -122,11 +123,15 @@ class MainActivity : ComponentActivity() {
 private fun ConfigurationWorkbench(container: AppContainer) {
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
+    val robotsFlow = remember(container) { container.robotRepository.observeAll() }
+    val rulesFlow = remember(container) { container.senderRuleRepository.observeAll() }
+    val recentRecordsFlow = remember(container) { container.processingRepository.observeRecentRecords(limit = 10) }
+    val failedAttemptsFlow = remember(container) { container.processingRepository.observeRetryableFailedAttempts(limit = 20) }
 
-    var robots by remember { mutableStateOf(emptyList<RobotEndpoint>()) }
-    var rules by remember { mutableStateOf(emptyList<SenderRule>()) }
-    var recentRecords by remember { mutableStateOf(emptyList<SmsRecordPreview>()) }
-    var failedAttempts by remember { mutableStateOf(emptyList<RetryableAttempt>()) }
+    val robots by robotsFlow.collectAsState(initial = emptyList())
+    val rules by rulesFlow.collectAsState(initial = emptyList())
+    val recentRecords by recentRecordsFlow.collectAsState(initial = emptyList())
+    val failedAttempts by failedAttemptsFlow.collectAsState(initial = emptyList())
     var retryPolicyConfig by remember { mutableStateOf(RetryPolicyConfig.default()) }
     var permissionSnapshot by remember { mutableStateOf(readPermissionSnapshot(context)) }
     var monitoringServiceRunning by remember { mutableStateOf(readMonitoringServiceRunning(context)) }
@@ -194,16 +199,8 @@ private fun ConfigurationWorkbench(container: AppContainer) {
 
     suspend fun reloadData() {
         isLoading = true
-        val reloadedRobots = withContext(Dispatchers.IO) { container.robotRepository.getAll() }
-        val reloadedRules = withContext(Dispatchers.IO) { container.senderRuleRepository.getAll() }
-        val reloadedRecentRecords = withContext(Dispatchers.IO) { container.processingRepository.getRecentRecords(limit = 10) }
-        val reloadedFailedAttempts = withContext(Dispatchers.IO) { container.processingRepository.getRetryableFailedAttempts(limit = 20) }
         val reloadedRetryPolicyConfig = withContext(Dispatchers.IO) { container.settingsRepository.getRetryPolicyConfig() }
         val reloadedMonitoringState = withContext(Dispatchers.IO) { container.settingsRepository.getMonitoringState() }
-        robots = reloadedRobots
-        rules = reloadedRules
-        recentRecords = reloadedRecentRecords
-        failedAttempts = reloadedFailedAttempts
         retryPolicyConfig = reloadedRetryPolicyConfig
         monitoringPersistenceState = reloadedMonitoringState
         permissionSnapshot = readPermissionSnapshot(context)

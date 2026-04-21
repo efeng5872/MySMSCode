@@ -2,6 +2,8 @@ package com.example.mysmscode.data
 
 import com.example.mysmscode.domain.RobotEndpoint
 import com.example.mysmscode.domain.RobotType
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
@@ -133,6 +135,8 @@ private class FakeRobotEndpointDao : RobotEndpointDao {
     override suspend fun findById(id: Long): RobotEndpointEntity? = entities[id]
 
     override suspend fun getAll(): List<RobotEndpointEntity> = entities.values.toList()
+
+    override fun observeAll(): Flow<List<RobotEndpointEntity>> = flowOf(entities.values.toList())
 }
 
 private class ThrowingWebhookCipher : WebhookCipher {

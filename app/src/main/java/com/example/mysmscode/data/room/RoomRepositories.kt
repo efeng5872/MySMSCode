@@ -14,6 +14,8 @@ import com.example.mysmscode.domain.SmsRecordDraft
 import com.example.mysmscode.domain.SmsRecordPreview
 import com.example.mysmscode.domain.buildPersistenceTrace
 import com.example.mysmscode.data.WebhookCipher
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
 import kotlin.runCatching
 
 class RoomRobotEndpointRepository(
@@ -58,6 +60,10 @@ class RoomRobotEndpointRepository(
 
     suspend fun getAll(): List<RobotEndpoint> = robotEndpointDao.getAll().map { entity ->
         decryptAndMigrateIfNeeded(entity)
+    }
+
+    fun observeAll(): Flow<List<RobotEndpoint>> = robotEndpointDao.observeAll().map { entities ->
+        entities.map { entity -> decryptAndMigrateIfNeeded(entity) }
     }
 
     private suspend fun decryptAndMigrateIfNeeded(entity: RobotEndpointEntity): RobotEndpoint {
@@ -136,6 +142,12 @@ class RoomSenderRuleRepository(
     suspend fun getAll(): List<SenderRule> {
         return senderRuleDao.getAll().map(SenderRuleWithRobots::toDomain)
     }
+
+    fun observeAll(): Flow<List<SenderRule>> {
+        return senderRuleDao.observeAll().map { rules ->
+            rules.map(SenderRuleWithRobots::toDomain)
+        }
+    }
 }
 
 class RoomProcessingRepository(
@@ -181,8 +193,28 @@ class RoomProcessingRepository(
         }
     }
 
+    fun observeRecentRecords(limit: Int = 5): Flow<List<SmsRecordPreview>> {
+        return processingDao.observeRecentRecords(limit).map { records ->
+            records.map { entity ->
+                SmsRecordPreview(
+                    senderNumber = entity.senderNumber,
+                    messageBody = entity.messageBody,
+                    status = entity.processingStatus,
+                    source = entity.source,
+                    receivedAt = entity.receivedAt,
+                )
+            }
+        }
+    }
+
     suspend fun getRetryableFailedAttempts(limit: Int = 20): List<RetryableAttempt> {
         return processingDao.getRetryableFailedAttempts(limit).map(RetryableAttemptRow::toDomain)
+    }
+
+    fun observeRetryableFailedAttempts(limit: Int = 20): Flow<List<RetryableAttempt>> {
+        return processingDao.observeRetryableFailedAttempts(limit).map { attempts ->
+            attempts.map(RetryableAttemptRow::toDomain)
+        }
     }
 
     suspend fun getRetryableAttemptById(attemptId: Long): RetryableAttempt? {
