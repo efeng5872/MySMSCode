@@ -197,24 +197,43 @@ private fun ConfigurationWorkbench(container: AppContainer) {
         }
     }
 
-    suspend fun reloadData() {
-        isLoading = true
+    fun applyRetryPolicyDraft(config: RetryPolicyConfig) {
+        retryPolicyConfig = config
+        firstRetryDelayText = config.firstRetryDelaySeconds.toString()
+        secondRetryDelayText = config.secondRetryDelaySeconds.toString()
+        thirdRetryDelayText = config.thirdRetryDelaySeconds.toString()
+    }
+
+    suspend fun refreshRetryPolicyState() {
         val reloadedRetryPolicyConfig = withContext(Dispatchers.IO) { container.settingsRepository.getRetryPolicyConfig() }
-        val reloadedMonitoringState = withContext(Dispatchers.IO) { container.settingsRepository.getMonitoringState() }
-        retryPolicyConfig = reloadedRetryPolicyConfig
-        monitoringPersistenceState = reloadedMonitoringState
-        permissionSnapshot = readPermissionSnapshot(context)
+        applyRetryPolicyDraft(reloadedRetryPolicyConfig)
+    }
+
+    suspend fun refreshMonitoringRuntimeState() {
+        monitoringPersistenceState = withContext(Dispatchers.IO) { container.settingsRepository.getMonitoringState() }
         monitoringServiceRunning = readMonitoringServiceRunning(context)
-        firstRetryDelayText = reloadedRetryPolicyConfig.firstRetryDelaySeconds.toString()
-        secondRetryDelayText = reloadedRetryPolicyConfig.secondRetryDelaySeconds.toString()
-        thirdRetryDelayText = reloadedRetryPolicyConfig.thirdRetryDelaySeconds.toString()
+    }
+
+    fun refreshPermissionState() {
+        permissionSnapshot = readPermissionSnapshot(context)
+    }
+
+    fun refreshPassiveStatusMessage() {
         statusMessage = reconcilePassiveMonitoringStatusMessage(
             context = context,
             currentMessage = statusMessage,
             isServiceRunning = monitoringServiceRunning,
-            monitoringState = reloadedMonitoringState,
+            monitoringState = monitoringPersistenceState,
             transition = monitoringTransition,
         )
+    }
+
+    suspend fun refreshRuntimeState() {
+        isLoading = true
+        refreshRetryPolicyState()
+        refreshMonitoringRuntimeState()
+        refreshPermissionState()
+        refreshPassiveStatusMessage()
         isLoading = false
     }
 
@@ -267,7 +286,6 @@ private fun ConfigurationWorkbench(container: AppContainer) {
         var recordWritten = false
         for (delayMillis in feedbackPlan.refreshDelaysMillis) {
             delay(delayMillis)
-            reloadData()
             val injectedRecord = findInjectedSimulationRecord(
                 records = recentRecords,
                 senderNumber = request.senderNumber,
@@ -281,7 +299,6 @@ private fun ConfigurationWorkbench(container: AppContainer) {
             }
         }
         if (!recordWritten && feedbackPlan.finalRefreshBeforeTimeout) {
-            reloadData()
             val injectedRecord = findInjectedSimulationRecord(
                 records = recentRecords,
                 senderNumber = request.senderNumber,
@@ -365,7 +382,7 @@ private fun ConfigurationWorkbench(container: AppContainer) {
         showRuleDialog = true
     }
     LaunchedEffect(Unit) {
-        reloadData()
+        refreshRuntimeState()
     }
 
     LaunchedEffect(permissionSnapshot, hasAutoRequestedPermissions) {
@@ -461,7 +478,7 @@ private fun ConfigurationWorkbench(container: AppContainer) {
                                             fallbackMessage = context.getString(R.string.status_monitoring_stop_failed),
                                         )
                                         monitoringTransition = MonitoringControlTransition.IDLE
-                                        reloadData()
+                                        refreshRuntimeState()
                                     }
 
                                     !permissionUiState.canStartMonitoring -> {
@@ -489,13 +506,13 @@ private fun ConfigurationWorkbench(container: AppContainer) {
                                             fallbackMessage = context.getString(R.string.status_monitoring_start_failed),
                                         )
                                         monitoringTransition = MonitoringControlTransition.IDLE
-                                        reloadData()
+                                        refreshRuntimeState()
                                     }
                                 }
                             }
                         },
                         onRefresh = {
-                            scope.launch { reloadData() }
+                            scope.launch { refreshRuntimeState() }
                         },
                     )
                     FailureAlertCard(
@@ -651,7 +668,7 @@ private fun ConfigurationWorkbench(container: AppContainer) {
                                         secondDelay,
                                         thirdDelay,
                                     )
-                                    reloadData()
+                                    refreshRuntimeState()
                                 }
                             },
                         )
@@ -704,7 +721,6 @@ private fun ConfigurationWorkbench(container: AppContainer) {
                                                 if (isEditMode) R.string.status_robot_updated else R.string.status_robot_saved,
                                                 savedName,
                                             )
-                                            reloadData()
                                         }
                                         RepositorySaveResult.DuplicateName -> {
                                             statusMessage = context.getString(R.string.status_robot_duplicate)
@@ -805,7 +821,6 @@ private fun ConfigurationWorkbench(container: AppContainer) {
                                                 if (isEditMode) R.string.status_rule_updated else R.string.status_rule_saved,
                                                 savedSender,
                                             )
-                                            reloadData()
                                         }
                                         RepositorySaveResult.DuplicateSenderNumber -> {
                                             statusMessage = context.getString(R.string.status_rule_duplicate)
@@ -833,7 +848,6 @@ private fun ConfigurationWorkbench(container: AppContainer) {
                                     pendingDeleteRobotId = null
                                     resetRobotEditor()
                                     statusMessage = context.getString(R.string.status_robot_deleted, robotNameToDelete)
-                                    reloadData()
                                 }
                             },
                             onDismiss = { pendingDeleteRobotId = null },
@@ -850,7 +864,6 @@ private fun ConfigurationWorkbench(container: AppContainer) {
                                     pendingDeleteRuleId = null
                                     resetRuleEditor()
                                     statusMessage = context.getString(R.string.status_rule_deleted, senderNumberToDelete)
-                                    reloadData()
                                 }
                             },
                             onDismiss = { pendingDeleteRuleId = null },
