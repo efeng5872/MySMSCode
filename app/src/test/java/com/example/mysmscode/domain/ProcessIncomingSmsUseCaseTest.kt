@@ -153,6 +153,7 @@ class ProcessIncomingSmsUseCaseTest {
             rules = listOf(
                 SenderRule(
                     senderNumber = "13608083211",
+                    senderMatchMode = SenderMatchMode.INTERNATIONAL_NUMBER,
                     enabled = true,
                     keywords = listOf("code"),
                     selectedRobotIds = listOf(1L),
@@ -180,6 +181,7 @@ class ProcessIncomingSmsUseCaseTest {
             rules = listOf(
                 SenderRule(
                     senderNumber = "13608083211",
+                    senderMatchMode = SenderMatchMode.INTERNATIONAL_NUMBER,
                     enabled = true,
                     keywords = listOf("code"),
                     selectedRobotIds = listOf(1L),
@@ -207,6 +209,7 @@ class ProcessIncomingSmsUseCaseTest {
             rules = listOf(
                 SenderRule(
                     senderNumber = "13608083211",
+                    senderMatchMode = SenderMatchMode.INTERNATIONAL_NUMBER,
                     enabled = true,
                     keywords = listOf("code"),
                     selectedRobotIds = listOf(1L),
@@ -235,6 +238,7 @@ class ProcessIncomingSmsUseCaseTest {
             rules = listOf(
                 SenderRule(
                     senderNumber = "10654321",
+                    senderMatchMode = SenderMatchMode.DISPLAY_VALUE,
                     enabled = true,
                     keywords = listOf("code"),
                     selectedRobotIds = listOf(1L),
@@ -252,6 +256,34 @@ class ProcessIncomingSmsUseCaseTest {
         )
 
         assertTrue(result is SmsProcessingResult.PendingForward)
+    }
+
+    @Test
+    fun senderNumberMatching_displayValueModeRequiresDisplayedValueToStayConsistent() {
+        val result = useCase.process(
+            senderNumber = "+8613608083211",
+            messageBody = "test verification code is 556677",
+            rules = listOf(
+                SenderRule(
+                    senderNumber = "13608083211",
+                    senderMatchMode = SenderMatchMode.DISPLAY_VALUE,
+                    enabled = true,
+                    keywords = listOf("code"),
+                    selectedRobotIds = listOf(1L),
+                )
+            ),
+            robots = listOf(
+                RobotEndpoint(
+                    id = 1L,
+                    name = "WeCom Main",
+                    type = RobotType.WECOM,
+                    enabled = true,
+                    webhookUrl = "https://example.com/wecom",
+                )
+            ),
+        )
+
+        assertTrue(result is SmsProcessingResult.Ignored)
     }
 
 }

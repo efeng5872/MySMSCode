@@ -5,6 +5,12 @@ enum class RobotType {
     WECOM,
 }
 
+enum class SenderMatchMode {
+    DISPLAY_VALUE,
+    INTERNATIONAL_NUMBER,
+    LEGACY_COMPAT,
+}
+
 data class RobotEndpoint(
     val id: Long = 0L,
     val name: String,
@@ -18,6 +24,7 @@ data class RobotEndpoint(
 data class SenderRule(
     val id: Long = 0L,
     val senderNumber: String,
+    val senderMatchMode: SenderMatchMode = SenderMatchMode.LEGACY_COMPAT,
     val enabled: Boolean,
     val keywords: List<String>,
     val selectedRobotIds: List<Long>,

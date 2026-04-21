@@ -10,4 +10,6 @@ sealed interface RepositorySaveResult<out T> {
     data object DuplicateSenderNumber : RepositorySaveResult<Nothing>
 
     data object NotFound : RepositorySaveResult<Nothing>
+
+    data object Failed : RepositorySaveResult<Nothing>
 }

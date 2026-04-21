@@ -73,8 +73,9 @@ import com.example.mysmscode.domain.RetryPolicyConfig
 import com.example.mysmscode.domain.RetryableAttempt
 import com.example.mysmscode.domain.RobotEndpoint
 import com.example.mysmscode.domain.RobotType
-import com.example.mysmscode.domain.SenderRule
 import com.example.mysmscode.domain.RuleSenderInputMode
+import com.example.mysmscode.domain.SenderMatchMode
+import com.example.mysmscode.domain.SenderRule
 import com.example.mysmscode.domain.SimulationInjectionRequest
 import com.example.mysmscode.domain.SimulationInjectionValidation
 import com.example.mysmscode.domain.buildSimulationFeedbackPlan
@@ -98,6 +99,7 @@ import com.example.mysmscode.domain.formatRetryTimestamp
 import com.example.mysmscode.domain.preloadCountryOptions
 import com.example.mysmscode.domain.receivedAtLabel
 import com.example.mysmscode.domain.statusLabel
+import com.example.mysmscode.domain.transformRuleNumberDraft
 import com.example.mysmscode.ui.theme.MySMSCodeTheme
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -352,7 +354,7 @@ private fun ConfigurationWorkbench(container: AppContainer) {
     }
 
     fun openRuleEditDialog(rule: SenderRule) {
-        val numberDraft = splitSenderNumberForEditing(rule.senderNumber)
+        val numberDraft = splitSenderNumberForEditing(rule.senderNumber, rule.senderMatchMode)
         editingRuleId = rule.id
         editingRuleCreatedAt = rule.createdAt
         ruleSenderInputMode = numberDraft.inputMode.name
@@ -710,6 +712,9 @@ private fun ConfigurationWorkbench(container: AppContainer) {
                                         RepositorySaveResult.DuplicateName -> {
                                             statusMessage = context.getString(R.string.status_robot_duplicate)
                                         }
+                                        RepositorySaveResult.Failed -> {
+                                            statusMessage = context.getString(R.string.status_robot_save_failed)
+                                        }
                                         else -> {
                                             statusMessage = context.getString(R.string.status_robot_save_failed)
                                         }
@@ -734,7 +739,19 @@ private fun ConfigurationWorkbench(container: AppContainer) {
                         RuleEditorDialog(
                             isEditMode = editingRuleId != null,
                             inputMode = selectedRuleSenderInputMode,
-                            onInputModeChange = { ruleSenderInputMode = it.name },
+                            onInputModeChange = { targetMode ->
+                                val transformedDraft = transformRuleNumberDraft(
+                                    currentInputMode = selectedRuleSenderInputMode,
+                                    targetInputMode = targetMode,
+                                    currentCountryOption = selectedCountryOption,
+                                    currentLocalNumber = senderNumber,
+                                    currentDisplaySender = rawSenderDisplay,
+                                )
+                                ruleSenderInputMode = transformedDraft.inputMode.name
+                                selectedCountryRegion = transformedDraft.countryOption.regionCode
+                                senderNumber = transformedDraft.localNumber
+                                rawSenderDisplay = transformedDraft.displaySender
+                            },
                             countryOptions = availableCountryOptions,
                             selectedCountry = selectedCountryOption,
                             onCountrySelected = { selectedCountryRegion = it.regionCode },
@@ -767,6 +784,10 @@ private fun ConfigurationWorkbench(container: AppContainer) {
                                         val rule = SenderRule(
                                             id = editingRuleId ?: 0L,
                                             senderNumber = buildRuleSenderNumber(inputMode = selectedRuleSenderInputMode, countryOption = selectedCountryOption, localNumber = senderNumber, displaySender = rawSenderDisplay),
+                                            senderMatchMode = when (selectedRuleSenderInputMode) {
+                                                RuleSenderInputMode.DISPLAY_VALUE -> SenderMatchMode.DISPLAY_VALUE
+                                                RuleSenderInputMode.INTERNATIONAL_NUMBER -> SenderMatchMode.INTERNATIONAL_NUMBER
+                                            },
                                             enabled = ruleEnabled,
                                             keywords = keywords,
                                             selectedRobotIds = selectedRobotIds.toList(),
@@ -791,6 +812,9 @@ private fun ConfigurationWorkbench(container: AppContainer) {
                                         }
                                         RepositorySaveResult.DuplicateSenderNumber -> {
                                             statusMessage = context.getString(R.string.status_rule_duplicate)
+                                        }
+                                        RepositorySaveResult.Failed -> {
+                                            statusMessage = context.getString(R.string.status_rule_save_failed)
                                         }
                                         else -> {
                                             statusMessage = context.getString(R.string.status_rule_save_failed)

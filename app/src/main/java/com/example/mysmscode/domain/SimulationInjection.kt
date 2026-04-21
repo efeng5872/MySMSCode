@@ -84,7 +84,11 @@ fun findMatchingSimulationRule(
     phoneNumberNormalizer: PhoneNumberNormalizer = PhoneNumberNormalizer(),
 ): SenderRule? {
     return rules.firstOrNull { rule ->
-        rule.enabled && phoneNumberNormalizer.matches(rule.senderNumber, senderNumber)
+        rule.enabled && phoneNumberNormalizer.matches(
+            configuredSender = rule.senderNumber,
+            incomingSender = senderNumber,
+            matchMode = rule.senderMatchMode,
+        )
     }
 }
 

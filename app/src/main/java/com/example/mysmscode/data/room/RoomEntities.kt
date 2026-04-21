@@ -11,6 +11,7 @@ import com.example.mysmscode.domain.RetryPolicyConfig
 import com.example.mysmscode.domain.MonitoringPersistenceState
 import com.example.mysmscode.domain.RobotEndpoint
 import com.example.mysmscode.domain.RobotType
+import com.example.mysmscode.domain.SenderMatchMode
 import com.example.mysmscode.domain.SenderRule
 
 @Entity(
@@ -62,6 +63,8 @@ data class SenderRuleEntity(
     val id: Long = 0L,
     @ColumnInfo(name = "sender_number")
     val senderNumber: String,
+    @ColumnInfo(name = "sender_match_mode")
+    val senderMatchMode: SenderMatchMode,
     val enabled: Boolean,
     @ColumnInfo(name = "keyword_blob")
     val keywordBlob: String,
@@ -73,6 +76,7 @@ data class SenderRuleEntity(
     fun toDomain(selectedRobotIds: List<Long>): SenderRule = SenderRule(
         id = id,
         senderNumber = senderNumber,
+        senderMatchMode = senderMatchMode,
         enabled = enabled,
         keywords = KeywordListCodec.decode(keywordBlob),
         selectedRobotIds = selectedRobotIds,
@@ -84,6 +88,7 @@ data class SenderRuleEntity(
         fun fromDomain(domain: SenderRule): SenderRuleEntity = SenderRuleEntity(
             id = domain.id,
             senderNumber = domain.senderNumber,
+            senderMatchMode = domain.senderMatchMode,
             enabled = domain.enabled,
             keywordBlob = KeywordListCodec.encode(domain.keywords),
             createdAt = domain.createdAt,

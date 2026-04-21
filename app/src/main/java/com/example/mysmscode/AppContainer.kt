@@ -5,6 +5,7 @@ import androidx.room.Room
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.example.mysmscode.data.AppDatabase
+import com.example.mysmscode.data.KeystoreWebhookCipher
 import com.example.mysmscode.data.RoomProcessingRepository
 import com.example.mysmscode.data.RoomRobotEndpointRepository
 import com.example.mysmscode.data.RoomSenderRuleRepository
@@ -18,8 +19,8 @@ class MySmsCodeApplication : Application() {
 
 class AppContainer(application: Application) {
     private val migration4To5 = object : Migration(4, 5) {
-        override fun migrate(database: SupportSQLiteDatabase) {
-            database.execSQL(
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
                 """
                 CREATE TABLE IF NOT EXISTS `monitoring_state` (
                     `id` INTEGER NOT NULL,
@@ -36,18 +37,32 @@ class AppContainer(application: Application) {
         }
     }
 
+    private val migration5To6 = object : Migration(5, 6) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                """
+                ALTER TABLE sender_rules
+                ADD COLUMN sender_match_mode TEXT NOT NULL DEFAULT 'LEGACY_COMPAT'
+                """.trimIndent()
+            )
+        }
+    }
+
     val database: AppDatabase by lazy {
         Room.databaseBuilder(
             application,
             AppDatabase::class.java,
             "mysmscode.db"
-        ).addMigrations(migration4To5)
+        ).addMigrations(migration4To5, migration5To6)
             .fallbackToDestructiveMigration(false)
             .build()
     }
 
     val robotRepository: RoomRobotEndpointRepository by lazy {
-        RoomRobotEndpointRepository(database.robotEndpointDao())
+        RoomRobotEndpointRepository(
+            database.robotEndpointDao(),
+            KeystoreWebhookCipher(application),
+        )
     }
 
     val senderRuleRepository: RoomSenderRuleRepository by lazy {

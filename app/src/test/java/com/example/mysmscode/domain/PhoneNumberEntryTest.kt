@@ -37,4 +37,33 @@ class PhoneNumberEntryTest {
 
         assertEquals("10654321", senderNumber)
     }
+
+    @Test
+    fun `transform rule draft keeps display sender when switching to international`() {
+        val draft = transformRuleNumberDraft(
+            currentInputMode = RuleSenderInputMode.DISPLAY_VALUE,
+            targetInputMode = RuleSenderInputMode.INTERNATIONAL_NUMBER,
+            currentCountryOption = defaultCountryOption(),
+            currentLocalNumber = "",
+            currentDisplaySender = "1065896654201",
+        )
+
+        assertEquals(RuleSenderInputMode.INTERNATIONAL_NUMBER, draft.inputMode)
+        assertEquals("CN", draft.countryOption.regionCode)
+        assertEquals("1065896654201", draft.localNumber)
+    }
+
+    @Test
+    fun `transform rule draft keeps current international input when switching to display`() {
+        val draft = transformRuleNumberDraft(
+            currentInputMode = RuleSenderInputMode.INTERNATIONAL_NUMBER,
+            targetInputMode = RuleSenderInputMode.DISPLAY_VALUE,
+            currentCountryOption = defaultCountryOption(),
+            currentLocalNumber = "1065896654201",
+            currentDisplaySender = "",
+        )
+
+        assertEquals(RuleSenderInputMode.DISPLAY_VALUE, draft.inputMode)
+        assertEquals("+861065896654201", draft.displaySender)
+    }
 }

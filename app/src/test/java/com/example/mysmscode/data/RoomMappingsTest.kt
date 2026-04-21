@@ -3,6 +3,7 @@ package com.example.mysmscode.data
 import com.example.mysmscode.domain.RetryPolicyConfig
 import com.example.mysmscode.domain.RobotEndpoint
 import com.example.mysmscode.domain.RobotType
+import com.example.mysmscode.domain.SenderMatchMode
 import com.example.mysmscode.domain.SenderRule
 import org.junit.Assert.assertEquals
 import org.junit.Test
@@ -32,6 +33,7 @@ class RoomMappingsTest {
         val domain = SenderRule(
             id = 3L,
             senderNumber = "Bank-01",
+            senderMatchMode = SenderMatchMode.DISPLAY_VALUE,
             enabled = true,
             keywords = listOf("code", "OTP", "dynamic password"),
             selectedRobotIds = listOf(11L, 12L),
@@ -51,6 +53,7 @@ class RoomMappingsTest {
             rule = SenderRuleEntity(
                 id = 5L,
                 senderNumber = "10690001",
+                senderMatchMode = SenderMatchMode.DISPLAY_VALUE,
                 enabled = true,
                 keywordBlob = "code${KeywordListCodec.SEPARATOR}otp",
                 createdAt = 10L,

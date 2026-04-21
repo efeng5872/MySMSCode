@@ -52,6 +52,7 @@ class PhoneNumberNormalizerTest {
         val matched = normalizer.matches(
             configuredSender = "13608083211",
             incomingSender = "+8613608083211",
+            matchMode = SenderMatchMode.INTERNATIONAL_NUMBER,
         )
 
         assertTrue(matched)
@@ -62,6 +63,7 @@ class PhoneNumberNormalizerTest {
         val matched = normalizer.matches(
             configuredSender = "10654321",
             incomingSender = "10654321",
+            matchMode = SenderMatchMode.DISPLAY_VALUE,
         )
 
         assertTrue(matched)
@@ -72,6 +74,18 @@ class PhoneNumberNormalizerTest {
         val matched = normalizer.matches(
             configuredSender = "10654321",
             incomingSender = "10654322",
+            matchMode = SenderMatchMode.DISPLAY_VALUE,
+        )
+
+        assertFalse(matched)
+    }
+
+    @Test
+    fun matches_displayValueModeDoesNotTreatCountryCodeVariantAsSameNumber() {
+        val matched = normalizer.matches(
+            configuredSender = "13608083211",
+            incomingSender = "+8613608083211",
+            matchMode = SenderMatchMode.DISPLAY_VALUE,
         )
 
         assertFalse(matched)
@@ -94,6 +108,30 @@ class PhoneNumberNormalizerTest {
         assertEquals(RuleSenderInputMode.INTERNATIONAL_NUMBER, draft.inputMode)
         assertEquals("CN", draft.countryOption.regionCode)
         assertEquals("13608083211", draft.localNumber)
+    }
+
+    @Test
+    fun splitSenderNumberForEditing_preservesDisplayModeWhenRuleWasSavedAsDisplayValue() {
+        val draft = splitSenderNumberForEditing(
+            rawNumber = "13608083211",
+            matchMode = SenderMatchMode.DISPLAY_VALUE,
+        )
+
+        assertEquals(RuleSenderInputMode.DISPLAY_VALUE, draft.inputMode)
+        assertEquals("13608083211", draft.displaySender)
+        assertEquals("", draft.localNumber)
+    }
+
+    @Test
+    fun splitSenderNumberForEditing_preservesInternationalModeForChinaShortCodeStyleNumber() {
+        val draft = splitSenderNumberForEditing(
+            rawNumber = "+861065896654201",
+            matchMode = SenderMatchMode.INTERNATIONAL_NUMBER,
+        )
+
+        assertEquals(RuleSenderInputMode.INTERNATIONAL_NUMBER, draft.inputMode)
+        assertEquals("CN", draft.countryOption.regionCode)
+        assertEquals("1065896654201", draft.localNumber)
     }
 
 }

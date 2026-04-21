@@ -1,5 +1,6 @@
 package com.example.mysmscode.data
 
+import android.database.sqlite.SQLiteConstraintException
 import androidx.room.withTransaction
 import com.example.mysmscode.DebugTraceLogger
 import com.example.mysmscode.domain.ForwardAttemptDraft
@@ -12,39 +13,73 @@ import com.example.mysmscode.domain.SenderRule
 import com.example.mysmscode.domain.SmsRecordDraft
 import com.example.mysmscode.domain.SmsRecordPreview
 import com.example.mysmscode.domain.buildPersistenceTrace
+import com.example.mysmscode.data.WebhookCipher
 import kotlin.runCatching
 
 class RoomRobotEndpointRepository(
     private val robotEndpointDao: RobotEndpointDao,
+    private val webhookCipher: WebhookCipher,
 ) {
-    suspend fun save(robot: RobotEndpoint): RepositorySaveResult<RobotEndpoint> = runCatching {
-        val id = robotEndpointDao.insert(RobotEndpointEntity.fromDomain(robot))
+    suspend fun save(robot: RobotEndpoint): RepositorySaveResult<RobotEndpoint> = try {
+        val encryptedRobot = robot.copy(webhookUrl = encryptWebhookOrThrow(robot.webhookUrl))
+        val id = robotEndpointDao.insert(
+            RobotEndpointEntity.fromDomain(
+                encryptedRobot
+            )
+        )
         RepositorySaveResult.Success(robot.copy(id = id))
-    }.getOrElse {
+    } catch (_: SQLiteConstraintException) {
         RepositorySaveResult.DuplicateName
+    } catch (_: Exception) {
+        RepositorySaveResult.Failed
     }
 
-    suspend fun update(robot: RobotEndpoint): RepositorySaveResult<RobotEndpoint> = runCatching {
-        robotEndpointDao.update(RobotEndpointEntity.fromDomain(robot))
+    suspend fun update(robot: RobotEndpoint): RepositorySaveResult<RobotEndpoint> = try {
+        val encryptedRobot = robot.copy(webhookUrl = encryptWebhookOrThrow(robot.webhookUrl))
+        robotEndpointDao.update(
+            RobotEndpointEntity.fromDomain(
+                encryptedRobot
+            )
+        )
         RepositorySaveResult.Success(robot)
-    }.getOrElse {
+    } catch (_: SQLiteConstraintException) {
         RepositorySaveResult.DuplicateName
+    } catch (_: Exception) {
+        RepositorySaveResult.Failed
     }
 
     suspend fun deleteById(id: Long) {
         robotEndpointDao.deleteById(id)
     }
 
-    suspend fun findById(id: Long): RobotEndpoint? = robotEndpointDao.findById(id)?.toDomain()
+    suspend fun findById(id: Long): RobotEndpoint? = robotEndpointDao.findById(id)?.let { entity ->
+        decryptAndMigrateIfNeeded(entity)
+    }
 
-    suspend fun getAll(): List<RobotEndpoint> = robotEndpointDao.getAll().map(RobotEndpointEntity::toDomain)
+    suspend fun getAll(): List<RobotEndpoint> = robotEndpointDao.getAll().map { entity ->
+        decryptAndMigrateIfNeeded(entity)
+    }
+
+    private suspend fun decryptAndMigrateIfNeeded(entity: RobotEndpointEntity): RobotEndpoint {
+        return if (webhookCipher.isEncrypted(entity.webhookUrl)) {
+            entity.copy(webhookUrl = webhookCipher.decrypt(entity.webhookUrl)).toDomain()
+        } else {
+            val encryptedWebhook = encryptWebhookOrThrow(entity.webhookUrl)
+            robotEndpointDao.update(entity.copy(webhookUrl = encryptedWebhook))
+            entity.toDomain()
+        }
+    }
+
+    private fun encryptWebhookOrThrow(webhookUrl: String): String {
+        return webhookCipher.encrypt(webhookUrl)
+    }
 }
 
 class RoomSenderRuleRepository(
     private val database: AppDatabase,
     private val senderRuleDao: SenderRuleDao,
 ) {
-    suspend fun save(rule: SenderRule): RepositorySaveResult<SenderRule> = runCatching {
+    suspend fun save(rule: SenderRule): RepositorySaveResult<SenderRule> = try {
         database.withTransaction {
             val ruleId = senderRuleDao.insert(SenderRuleEntity.fromDomain(rule))
             val crossRefs = rule.selectedRobotIds.mapIndexed { index, robotId ->
@@ -57,11 +92,13 @@ class RoomSenderRuleRepository(
             senderRuleDao.insertCrossRefs(crossRefs)
             RepositorySaveResult.Success(rule.copy(id = ruleId))
         }
-    }.getOrElse {
+    } catch (_: SQLiteConstraintException) {
         RepositorySaveResult.DuplicateSenderNumber
+    } catch (_: Exception) {
+        RepositorySaveResult.Failed
     }
 
-    suspend fun update(rule: SenderRule): RepositorySaveResult<SenderRule> = runCatching {
+    suspend fun update(rule: SenderRule): RepositorySaveResult<SenderRule> = try {
         database.withTransaction {
             senderRuleDao.update(SenderRuleEntity.fromDomain(rule))
             senderRuleDao.deleteCrossRefsForRule(rule.id)
@@ -75,8 +112,10 @@ class RoomSenderRuleRepository(
             senderRuleDao.insertCrossRefs(crossRefs)
             RepositorySaveResult.Success(rule)
         }
-    }.getOrElse {
+    } catch (_: SQLiteConstraintException) {
         RepositorySaveResult.DuplicateSenderNumber
+    } catch (_: Exception) {
+        RepositorySaveResult.Failed
     }
 
     suspend fun deleteById(id: Long) {

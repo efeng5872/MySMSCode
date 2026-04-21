@@ -23,7 +23,7 @@ class PhoneNumberNormalizer(
         return parseToE164OrNull(compact) ?: compact
     }
 
-    fun matches(
+    fun matchesLegacy(
         configuredSender: String,
         incomingSender: String,
     ): Boolean {
@@ -36,6 +36,47 @@ class PhoneNumberNormalizer(
         val configuredVariants = comparableVariants(configuredSender)
         val incomingVariants = comparableVariants(incomingSender)
         return configuredVariants.any(incomingVariants::contains)
+    }
+
+    fun matches(
+        configuredSender: String,
+        incomingSender: String,
+        matchMode: SenderMatchMode,
+    ): Boolean {
+        return when (matchMode) {
+            SenderMatchMode.DISPLAY_VALUE -> matchesDisplayValue(configuredSender, incomingSender)
+            SenderMatchMode.INTERNATIONAL_NUMBER -> matchesInternationalNumber(configuredSender, incomingSender)
+            SenderMatchMode.LEGACY_COMPAT -> matchesLegacy(configuredSender, incomingSender)
+        }
+    }
+
+    private fun matchesDisplayValue(
+        configuredSender: String,
+        incomingSender: String,
+    ): Boolean {
+        val configuredDisplay = configuredSender.trim()
+        val incomingDisplay = incomingSender.trim()
+        if (configuredDisplay.isEmpty() || incomingDisplay.isEmpty()) {
+            return false
+        }
+        if (configuredDisplay == incomingDisplay) {
+            return true
+        }
+
+        val configuredCompact = compact(configuredDisplay)
+        val incomingCompact = compact(incomingDisplay)
+        return configuredCompact.isNotEmpty() &&
+            incomingCompact.isNotEmpty() &&
+            configuredCompact == incomingCompact
+    }
+
+    private fun matchesInternationalNumber(
+        configuredSender: String,
+        incomingSender: String,
+    ): Boolean {
+        val configuredVariants = comparableVariants(configuredSender)
+        val incomingVariants = comparableVariants(incomingSender)
+        return configuredVariants.isNotEmpty() && configuredVariants.any(incomingVariants::contains)
     }
 
     fun comparableVariants(rawNumber: String): Set<String> {
@@ -145,11 +186,25 @@ fun defaultRuleNumberDraft(): RuleNumberDraft = RuleNumberDraft(
 
 fun splitSenderNumberForEditing(
     rawNumber: String,
+    matchMode: SenderMatchMode = SenderMatchMode.LEGACY_COMPAT,
     phoneNumberUtil: PhoneNumberUtil = PhoneNumberUtil.getInstance(),
 ): RuleNumberDraft {
     val trimmed = rawNumber.trim()
     if (trimmed.isEmpty()) {
         return defaultRuleNumberDraft()
+    }
+
+    if (matchMode == SenderMatchMode.DISPLAY_VALUE) {
+        return RuleNumberDraft(
+            inputMode = RuleSenderInputMode.DISPLAY_VALUE,
+            countryOption = defaultCountryOption(),
+            localNumber = "",
+            displaySender = trimmed,
+        )
+    }
+
+    if (matchMode == SenderMatchMode.INTERNATIONAL_NUMBER) {
+        return parseInternationalDraftOrFallback(trimmed, phoneNumberUtil)
     }
 
     return try {
@@ -180,6 +235,48 @@ fun splitSenderNumberForEditing(
     }
 }
 
+private fun parseInternationalDraftOrFallback(
+    trimmed: String,
+    phoneNumberUtil: PhoneNumberUtil,
+): RuleNumberDraft {
+    try {
+        val parsedNumber = phoneNumberUtil.parse(trimmed, defaultCountryOption().regionCode)
+        if (phoneNumberUtil.isValidNumber(parsedNumber)) {
+            val regionCode = phoneNumberUtil.getRegionCodeForNumber(parsedNumber).orEmpty()
+            return RuleNumberDraft(
+                inputMode = RuleSenderInputMode.INTERNATIONAL_NUMBER,
+                countryOption = findCountryOption(regionCode),
+                localNumber = phoneNumberUtil.getNationalSignificantNumber(parsedNumber),
+                displaySender = trimmed,
+            )
+        }
+    } catch (_: NumberParseException) {
+        // 已明确为国际号码模式时，解析失败也不回退为显示值模式。
+    }
+
+    val compact = trimmed.filterIndexed { index, char ->
+        char.isDigit() || (char == '+' && index == 0)
+    }
+    val matchedCountry = supportedCountryOptions()
+        .sortedByDescending { it.callingCode.length }
+        .firstOrNull { option ->
+            compact.startsWith(option.callingCode) ||
+                compact.startsWith(option.callingCode.removePrefix("+"))
+        }
+        ?: defaultCountryOption()
+    val localNumber = compact
+        .removePrefix(matchedCountry.callingCode)
+        .removePrefix(matchedCountry.callingCode.removePrefix("+"))
+        .ifBlank { compact.removePrefix("+") }
+
+    return RuleNumberDraft(
+        inputMode = RuleSenderInputMode.INTERNATIONAL_NUMBER,
+        countryOption = matchedCountry,
+        localNumber = localNumber,
+        displaySender = trimmed,
+    )
+}
+
 fun buildRuleSenderNumber(
     inputMode: RuleSenderInputMode,
     countryOption: CountryOption,
@@ -190,5 +287,79 @@ fun buildRuleSenderNumber(
     return when (inputMode) {
         RuleSenderInputMode.DISPLAY_VALUE -> displaySender.trim()
         RuleSenderInputMode.INTERNATIONAL_NUMBER -> normalizer.normalize("${countryOption.callingCode}${localNumber.trim()}")
+    }
+}
+
+fun transformRuleNumberDraft(
+    currentInputMode: RuleSenderInputMode,
+    targetInputMode: RuleSenderInputMode,
+    currentCountryOption: CountryOption,
+    currentLocalNumber: String,
+    currentDisplaySender: String,
+    phoneNumberUtil: PhoneNumberUtil = PhoneNumberUtil.getInstance(),
+): RuleNumberDraft {
+    if (currentInputMode == targetInputMode) {
+        return RuleNumberDraft(
+            inputMode = currentInputMode,
+            countryOption = currentCountryOption,
+            localNumber = currentLocalNumber,
+            displaySender = currentDisplaySender,
+        )
+    }
+
+    return when (targetInputMode) {
+        RuleSenderInputMode.DISPLAY_VALUE -> RuleNumberDraft(
+            inputMode = RuleSenderInputMode.DISPLAY_VALUE,
+            countryOption = currentCountryOption,
+            localNumber = "",
+            displaySender = when (currentInputMode) {
+                RuleSenderInputMode.DISPLAY_VALUE -> currentDisplaySender.trim()
+                RuleSenderInputMode.INTERNATIONAL_NUMBER -> buildRuleSenderNumber(
+                    inputMode = RuleSenderInputMode.INTERNATIONAL_NUMBER,
+                    countryOption = currentCountryOption,
+                    localNumber = currentLocalNumber,
+                    displaySender = currentDisplaySender,
+                )
+            },
+        )
+
+        RuleSenderInputMode.INTERNATIONAL_NUMBER -> {
+            val sourceNumber = when (currentInputMode) {
+                RuleSenderInputMode.DISPLAY_VALUE -> currentDisplaySender.trim()
+                RuleSenderInputMode.INTERNATIONAL_NUMBER -> buildRuleSenderNumber(
+                    inputMode = RuleSenderInputMode.INTERNATIONAL_NUMBER,
+                    countryOption = currentCountryOption,
+                    localNumber = currentLocalNumber,
+                    displaySender = currentDisplaySender,
+                )
+            }
+            if (sourceNumber.isBlank()) {
+                RuleNumberDraft(
+                    inputMode = RuleSenderInputMode.INTERNATIONAL_NUMBER,
+                    countryOption = currentCountryOption,
+                    localNumber = "",
+                    displaySender = "",
+                )
+            } else {
+                if (currentInputMode == RuleSenderInputMode.DISPLAY_VALUE && !sourceNumber.startsWith("+") && !sourceNumber.startsWith("00")) {
+                    RuleNumberDraft(
+                        inputMode = RuleSenderInputMode.INTERNATIONAL_NUMBER,
+                        countryOption = currentCountryOption,
+                        localNumber = sourceNumber
+                            .trim()
+                            .removePrefix(currentCountryOption.callingCode)
+                            .removePrefix(currentCountryOption.callingCode.removePrefix("+"))
+                            .ifBlank { sourceNumber.trim() },
+                        displaySender = sourceNumber,
+                    )
+                } else {
+                    splitSenderNumberForEditing(
+                        rawNumber = sourceNumber,
+                        matchMode = SenderMatchMode.INTERNATIONAL_NUMBER,
+                        phoneNumberUtil = phoneNumberUtil,
+                    )
+                }
+            }
+        }
     }
 }
