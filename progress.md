@@ -116,4 +116,14 @@
 - 本轮重构验证结果：
   - `testDebugUnitTest` 成功
   - `:app:connectedDebugAndroidTest` 成功
+- 继续完成第一类结构优化的下一步：从 `MainActivity.kt` 中抽出 `SimulationCoordinator`，将模拟注入的“规则匹配 -> 请求入队 -> 跳转首页 -> 分阶段状态反馈 -> 最近记录轮询确认”编排迁出页面。
+- 为 `SimulationCoordinator` 新增单元测试，覆盖未命中规则、成功写入最近记录、超时未写入三种主路径。
+- 当前 Simulation 重构验证结果：
+  - `testDebugUnitTest` 成功
+  - `:app:connectedDebugAndroidTest` 成功
+- 继续完成第一类结构优化的下一步：从 `MainActivity.kt` 中抽出 `MonitoringCoordinator`，将监控运行态刷新、权限请求触发、监控启停编排迁入独立协调层。
+- 为 `MonitoringCoordinator` 新增单元测试，覆盖权限请求、运行态刷新、无权限启动拦截、成功启动、成功停止等主路径。
+- 当前 Monitoring 重构验证结果：
+  - `testDebugUnitTest` 成功
+  - `:app:connectedDebugAndroidTest` 成功
 

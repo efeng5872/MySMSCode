@@ -42,3 +42,5 @@
 - Claude 关于 `MainActivity.kt` 模块边界开始变模糊的 review 属实。最新代码中，页面状态、权限处理、监控启停编排、规则/机器人编辑态与模拟注入反馈确实长期集中在单一大文件中。
 - 当前最合适的优化方式不是立刻全面引入 ViewModel，而是先做“最小必要重构”：优先抽离规则编辑态、机器人编辑态、模拟注入编排，再视后续功能增长情况决定是否继续抽监控协调层或升级为 ViewModel。
 - 已完成第一阶段落地：`RuleEditorState` 与 `RobotEditorState` 已从 `MainActivity.kt` 抽出，并通过新增单元测试锁定默认值、编辑回填、状态重置、号码模式切换与 webhook 重新录入提示等关键行为。
+- 已继续完成第二阶段第一步：`SimulationCoordinator` 已从 `MainActivity.kt` 抽出，模拟注入编排现在通过独立协调层处理，页面只负责触发与展示结果。
+- 已继续完成第二阶段第二步：`MonitoringCoordinator` 已从 `MainActivity.kt` 抽出，监控启停、运行态刷新与权限请求触发编排已集中到协调层，页面侧主要保留状态回填与 UI 触发。

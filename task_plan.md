@@ -12,7 +12,7 @@ Build an Android app that monitors incoming SMS messages from configured sender 
 | 4. Implement core feature with TDD | in_progress | Domain, repositories, Room persistence, configuration workbench, service/receiver pipeline, webhook dispatch, recent-history view, manual retry chain, configurable automatic retry scheduling, retry settings UI, failed-retry observability improvements, readable recent-history presentation, presentation-layer status filters, simulation injection, and automatic post-injection refresh feedback implemented |
 | 5. Verify and summarize | in_progress | Automated unit tests complete, layered test reports written, fresh-install permission flow, emulator SMS receive path, live Feishu/WeCom dual-channel delivery, and emulator E.164 normalization matching validated; simulator UI optimization pending |
 | 6. Add minimum Android integration coverage | completed | Test seam, minimum `androidTest` cases, and rule-conflict UI coverage added; `connectedDebugAndroidTest` now passes end-to-end |
-| 7. Reduce MainActivity orchestration coupling incrementally | in_progress | First stage complete: editor state extracted; next stage is simulation orchestration extraction |
+| 7. Reduce MainActivity orchestration coupling incrementally | in_progress | Editor state, simulation orchestration, and monitoring orchestration extracted; remaining work is optional further slimming and ViewModel evaluation |
 
 ## Decisions
 - Use existing single-module Android app as the starting point.
@@ -44,6 +44,8 @@ Build an Android app that monitors incoming SMS messages from configured sender 
 - International sender matching now uses `libphonenumber` with default region `CN`, standardizes parsed numbers to E.164, and falls back to a compacted raw form only when parsing fails.
 - Android integration coverage now includes monitoring service processing, recovery, Room webhook容错, and rule-conflict UI interception, with `connectedDebugAndroidTest` passing on the emulator.
 - MainActivity necessary refactor phase one is complete: rule and robot editor state have been extracted into dedicated state holders with unit-test coverage.
+- MainActivity necessary refactor phase two has started: simulation orchestration is now handled by `SimulationCoordinator` with dedicated unit tests.
+- MainActivity necessary refactor phase two is now largely complete: monitoring orchestration is also handled by `MonitoringCoordinator`, with unit tests covering refresh, permission request, and start/stop flows.
 
 ## Risks
 - SMS broadcast behavior differs by Android version and OEM restrictions.

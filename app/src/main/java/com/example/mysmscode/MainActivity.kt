@@ -48,6 +48,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -78,16 +79,11 @@ import com.example.mysmscode.domain.SenderMatchMode
 import com.example.mysmscode.domain.SenderRule
 import com.example.mysmscode.domain.SimulationInjectionRequest
 import com.example.mysmscode.domain.SimulationInjectionValidation
-import com.example.mysmscode.domain.buildSimulationFeedbackPlan
 import com.example.mysmscode.domain.SmsRecordPreview
 import com.example.mysmscode.domain.buildMonitoringControlState
 import com.example.mysmscode.domain.buildMonitoringDashboard
 import com.example.mysmscode.domain.completedRetryCount
-import com.example.mysmscode.domain.resolveMonitoringStatusMessage
 import com.example.mysmscode.domain.canDeleteRobot
-import com.example.mysmscode.domain.buildSimulationRuleMismatchMessage
-import com.example.mysmscode.domain.findInjectedSimulationRecord
-import com.example.mysmscode.domain.findMatchingSimulationRule
 import com.example.mysmscode.domain.shouldAutoRequestPermissions
 import com.example.mysmscode.domain.defaultCountryOption
 import com.example.mysmscode.domain.findCountryOption
@@ -127,6 +123,7 @@ private fun ConfigurationWorkbench(container: AppContainer) {
     val robots by robotsFlow.collectAsState(initial = emptyList())
     val rules by rulesFlow.collectAsState(initial = emptyList())
     val recentRecords by recentRecordsFlow.collectAsState(initial = emptyList())
+    val latestRecentRecords by rememberUpdatedState(recentRecords)
     val failedAttempts by failedAttemptsFlow.collectAsState(initial = emptyList())
     var retryPolicyConfig by remember { mutableStateOf(RetryPolicyConfig.default()) }
     var permissionSnapshot by remember { mutableStateOf(readPermissionSnapshot(context)) }
@@ -180,123 +177,56 @@ private fun ConfigurationWorkbench(container: AppContainer) {
         thirdRetryDelayText = config.thirdRetryDelaySeconds.toString()
     }
 
-    suspend fun refreshRetryPolicyState() {
-        val reloadedRetryPolicyConfig = withContext(Dispatchers.IO) { container.settingsRepository.getRetryPolicyConfig() }
-        applyRetryPolicyDraft(reloadedRetryPolicyConfig)
+    val availableCountryOptions = remember { supportedCountryOptions() }
+    val selectedCountryOption = remember(ruleEditorState.selectedCountryRegion) {
+        findCountryOption(ruleEditorState.selectedCountryRegion)
     }
-
-    suspend fun refreshMonitoringRuntimeState() {
-        monitoringPersistenceState = withContext(Dispatchers.IO) { container.settingsRepository.getMonitoringState() }
-        monitoringServiceRunning = readMonitoringServiceRunning(context)
-    }
-
-    fun refreshPermissionState() {
-        permissionSnapshot = readPermissionSnapshot(context)
-    }
-
-    fun refreshPassiveStatusMessage() {
-        statusMessage = reconcilePassiveMonitoringStatusMessage(
-            context = context,
-            currentMessage = statusMessage,
-            isServiceRunning = monitoringServiceRunning,
-            monitoringState = monitoringPersistenceState,
-            transition = monitoringTransition,
-        )
-    }
+    val selectedRuleSenderInputMode = ruleEditorState.selectedInputMode
+    val monitoringCoordinator = MonitoringCoordinator(
+        readRetryPolicyConfig = { withContext(Dispatchers.IO) { container.settingsRepository.getRetryPolicyConfig() } },
+        readMonitoringState = { withContext(Dispatchers.IO) { container.settingsRepository.getMonitoringState() } },
+        readPermissionSnapshot = { readPermissionSnapshot(context) },
+        readServiceRunning = { readMonitoringServiceRunning(context) },
+        startMonitoring = { MonitoringForegroundService.startMonitoring(context) },
+        stopMonitoring = { MonitoringForegroundService.stopMonitoring(context) },
+    )
+    val simulationCoordinator = SimulationCoordinator(
+        enqueueSimulation = { request ->
+            MonitoringForegroundService.enqueueSimulation(
+                context = context,
+                senderNumber = request.senderNumber,
+                messageBody = request.messageBody,
+            )
+        },
+        currentRecordsProvider = { latestRecentRecords },
+        updateSimulationStatus = { status -> simulationStatusMessage = status },
+        navigateToHomeRecentRecords = {
+            currentPage = WorkbenchPage.HOME.name
+            scrollState.animateScrollTo(0)
+        },
+    )
 
     suspend fun refreshRuntimeState() {
         isLoading = true
-        refreshRetryPolicyState()
-        refreshMonitoringRuntimeState()
-        refreshPermissionState()
-        refreshPassiveStatusMessage()
+        val result = monitoringCoordinator.refreshRuntimeState(
+            currentMessage = statusMessage,
+            transition = monitoringTransition,
+            startedMessage = context.getString(R.string.status_monitoring_started),
+        )
+        applyRetryPolicyDraft(result.retryPolicyConfig)
+        monitoringPersistenceState = result.monitoringPersistenceState
+        permissionSnapshot = result.permissionSnapshot
+        monitoringServiceRunning = result.monitoringServiceRunning
+        statusMessage = result.statusMessage
         isLoading = false
     }
 
-    suspend fun syncMonitoringState(expectedRunning: Boolean): MonitoringPersistenceState {
-        var latestState = monitoringPersistenceState
-        repeat(8) {
-            val isRunning = readMonitoringServiceRunning(context)
-            latestState = withContext(Dispatchers.IO) { container.settingsRepository.getMonitoringState() }
-            monitoringServiceRunning = isRunning
-            monitoringPersistenceState = latestState
-            val persistenceMatches = if (expectedRunning) {
-                latestState.monitoringEnabled && !latestState.stoppedByUser
-            } else {
-                !latestState.monitoringEnabled && latestState.stoppedByUser
-            }
-            if (isRunning == expectedRunning && persistenceMatches) {
-                return latestState
-            }
-            delay(250L)
-        }
-        monitoringServiceRunning = readMonitoringServiceRunning(context)
-        latestState = withContext(Dispatchers.IO) { container.settingsRepository.getMonitoringState() }
-        monitoringPersistenceState = latestState
-        return latestState
-    }
-
-    suspend fun performSimulationInjection(request: SimulationInjectionRequest) {
-        val matchedRule = findMatchingSimulationRule(
-            senderNumber = request.senderNumber,
-            rules = rules,
-        )
-        if (matchedRule == null) {
-            simulationStatusMessage = buildSimulationRuleMismatchMessage()
-            return
-        }
-        val feedbackPlan = buildSimulationFeedbackPlan(request.senderNumber)
-        val submittedAt = System.currentTimeMillis()
-        simulationStatusMessage = feedbackPlan.submittedStatusMessage
-        MonitoringForegroundService.enqueueSimulation(
-            context = context,
-            senderNumber = request.senderNumber,
-            messageBody = request.messageBody,
-        )
-        if (feedbackPlan.navigateToHomeRecentRecords) {
-            currentPage = WorkbenchPage.HOME.name
-            scrollState.animateScrollTo(0)
-        }
-        delay(feedbackPlan.submittedStatusVisibleDelayMillis)
-        simulationStatusMessage = feedbackPlan.matchedRuleStatusMessage
-        var recordWritten = false
-        for (delayMillis in feedbackPlan.refreshDelaysMillis) {
-            delay(delayMillis)
-            val injectedRecord = findInjectedSimulationRecord(
-                records = recentRecords,
-                senderNumber = request.senderNumber,
-                messageBody = request.messageBody,
-                submittedAt = submittedAt,
-            )
-            if (injectedRecord != null) {
-                simulationStatusMessage = feedbackPlan.completedStatusMessage
-                recordWritten = true
-                break
-            }
-        }
-        if (!recordWritten && feedbackPlan.finalRefreshBeforeTimeout) {
-            val injectedRecord = findInjectedSimulationRecord(
-                records = recentRecords,
-                senderNumber = request.senderNumber,
-                messageBody = request.messageBody,
-                submittedAt = submittedAt,
-            )
-            if (injectedRecord != null) {
-                simulationStatusMessage = feedbackPlan.completedStatusMessage
-                recordWritten = true
-            }
-        }
-        if (!recordWritten) {
-            simulationStatusMessage = feedbackPlan.timeoutStatusMessage
-        }
-    }
-
     fun launchPermissionRequest() {
-        val missingPermissions = requiredPermissions(permissionSnapshot)
-        if (missingPermissions.isNotEmpty()) {
-            hasAutoRequestedPermissions = true
-            permissionLauncher.launch(missingPermissions)
-        }
+        monitoringCoordinator.launchPermissionRequest(
+            permissionSnapshot = permissionSnapshot,
+            onAutoRequested = { hasAutoRequestedPermissions = true },
+            launchPermissions = { permissions -> permissionLauncher.launch(permissions) },
+        )
     }
 
     LaunchedEffect(Unit) {
@@ -323,12 +253,6 @@ private fun ConfigurationWorkbench(container: AppContainer) {
             countryOptionsPreloaded = true
         }
     }
-
-    val availableCountryOptions = remember { supportedCountryOptions() }
-    val selectedCountryOption = remember(ruleEditorState.selectedCountryRegion) {
-        findCountryOption(ruleEditorState.selectedCountryRegion)
-    }
-    val selectedRuleSenderInputMode = ruleEditorState.selectedInputMode
 
     val permissionUiState = remember(context, permissionSnapshot) {
         buildPermissionUiState(context, permissionSnapshot)
@@ -377,58 +301,31 @@ private fun ConfigurationWorkbench(container: AppContainer) {
                         permissionUiState = permissionUiState,
                         onToggleMonitoring = {
                             scope.launch {
-                                when {
-                                    monitoringServiceRunning -> {
-                                        val requestedAt = System.currentTimeMillis()
-                                        monitoringTransition = MonitoringControlTransition.STOPPING
-                                        statusMessage = context.getString(R.string.status_monitoring_stopping)
-                                        MonitoringForegroundService.stopMonitoring(context)
-                                        syncMonitoringState(expectedRunning = false)
-                                        if (!monitoringServiceRunning) {
-                                            monitoringPersistenceState = monitoringPersistenceState.copy(
-                                                monitoringEnabled = false,
-                                                stoppedByUser = true,
-                                                lastMonitoringStoppedAt = monitoringPersistenceState.lastMonitoringStoppedAt ?: requestedAt,
-                                            )
-                                        }
-                                        statusMessage = resolveMonitoringStatusMessage(
-                                            transition = MonitoringControlTransition.STOPPING,
-                                            isServiceRunning = monitoringServiceRunning,
-                                            requestMessage = context.getString(R.string.status_monitoring_stopping),
-                                            completedMessage = context.getString(R.string.status_monitoring_stopped),
-                                            fallbackMessage = context.getString(R.string.status_monitoring_stop_failed),
-                                        )
-                                        monitoringTransition = MonitoringControlTransition.IDLE
-                                        refreshRuntimeState()
-                                    }
-
-                                    !permissionUiState.canStartMonitoring -> {
-                                        statusMessage = permissionUiState.message
-                                    }
-
-                                    else -> {
-                                        val requestedAt = System.currentTimeMillis()
-                                        monitoringTransition = MonitoringControlTransition.STARTING
-                                        statusMessage = context.getString(R.string.status_monitoring_requested)
-                                        MonitoringForegroundService.startMonitoring(context)
-                                        syncMonitoringState(expectedRunning = true)
-                                        if (monitoringServiceRunning) {
-                                            monitoringPersistenceState = monitoringPersistenceState.copy(
-                                                monitoringEnabled = true,
-                                                stoppedByUser = false,
-                                                lastMonitoringStartedAt = monitoringPersistenceState.lastMonitoringStartedAt ?: requestedAt,
-                                            )
-                                        }
-                                        statusMessage = resolveMonitoringStatusMessage(
-                                            transition = MonitoringControlTransition.STARTING,
-                                            isServiceRunning = monitoringServiceRunning,
-                                            requestMessage = context.getString(R.string.status_monitoring_requested),
-                                            completedMessage = context.getString(R.string.status_monitoring_started),
-                                            fallbackMessage = context.getString(R.string.status_monitoring_start_failed),
-                                        )
-                                        monitoringTransition = MonitoringControlTransition.IDLE
-                                        refreshRuntimeState()
-                                    }
+                                val result = monitoringCoordinator.toggleMonitoring(
+                                    input = MonitoringToggleInput(
+                                        monitoringServiceRunning = monitoringServiceRunning,
+                                        monitoringPersistenceState = monitoringPersistenceState,
+                                        permissionUiState = permissionUiState,
+                                    ),
+                                    messages = MonitoringMessages(
+                                        startedMessage = context.getString(R.string.status_monitoring_started),
+                                        startRequestedMessage = context.getString(R.string.status_monitoring_requested),
+                                        startFailedMessage = context.getString(R.string.status_monitoring_start_failed),
+                                        stoppedMessage = context.getString(R.string.status_monitoring_stopped),
+                                        stopRequestedMessage = context.getString(R.string.status_monitoring_stopping),
+                                        stopFailedMessage = context.getString(R.string.status_monitoring_stop_failed),
+                                    ),
+                                    onProgress = { transition, message ->
+                                        monitoringTransition = transition
+                                        statusMessage = message
+                                    },
+                                )
+                                monitoringPersistenceState = result.monitoringPersistenceState
+                                monitoringServiceRunning = result.monitoringServiceRunning
+                                statusMessage = result.statusMessage
+                                monitoringTransition = MonitoringControlTransition.IDLE
+                                if (result.shouldRefreshRuntimeState) {
+                                    refreshRuntimeState()
                                 }
                             }
                         },
@@ -805,7 +702,10 @@ private fun ConfigurationWorkbench(container: AppContainer) {
                                         }
 
                                         is SimulationInjectionValidation.Valid -> {
-                                            performSimulationInjection(validation.request)
+                                            simulationCoordinator.execute(
+                                                request = validation.request,
+                                                rules = rules,
+                                            )
                                         }
                                     }
                                 }
@@ -899,24 +799,6 @@ private fun PermissionCard(
                 Text(uiState.actionLabel)
             }
         }
-    }
-}
-
-private fun reconcilePassiveMonitoringStatusMessage(
-    context: Context,
-    currentMessage: String,
-    isServiceRunning: Boolean,
-    monitoringState: MonitoringPersistenceState,
-    transition: MonitoringControlTransition,
-): String {
-    if (transition != MonitoringControlTransition.IDLE) {
-        return currentMessage
-    }
-    val startedMessage = context.getString(R.string.status_monitoring_started)
-    return when {
-        currentMessage.isBlank() && isServiceRunning && monitoringState.monitoringEnabled -> startedMessage
-        currentMessage == startedMessage && (!isServiceRunning || !monitoringState.monitoringEnabled) -> ""
-        else -> currentMessage
     }
 }
 
@@ -1646,13 +1528,6 @@ private fun readMonitoringServiceRunning(context: Context): Boolean {
         service.service.className == MonitoringForegroundService::class.java.name
     }
 }
-
-private fun requiredPermissions(snapshot: AppPermissionSnapshot): Array<String> = buildList {
-    if (!snapshot.receiveSmsGranted) add(Manifest.permission.RECEIVE_SMS)
-    if (snapshot.notificationPermissionRequired && !snapshot.postNotificationsGranted) {
-        add(Manifest.permission.POST_NOTIFICATIONS)
-    }
-}.toTypedArray()
 
 private fun requiresNotificationPermission(): Boolean = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
 
