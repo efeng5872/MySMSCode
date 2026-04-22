@@ -34,6 +34,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -65,7 +66,10 @@ fun RobotManagementCard(
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold,
                 )
-                TextButton(onClick = onAdd) {
+                TextButton(
+                    modifier = Modifier.testTag(UiTestTags.ROBOT_ADD_BUTTON),
+                    onClick = onAdd,
+                ) {
                     Text(stringResource(R.string.action_add))
                 }
             }
@@ -133,7 +137,10 @@ fun RuleManagementCard(
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold,
                 )
-                TextButton(onClick = onAdd) {
+                TextButton(
+                    modifier = Modifier.testTag(UiTestTags.RULE_ADD_BUTTON),
+                    onClick = onAdd,
+                ) {
                     Text(stringResource(R.string.action_add))
                 }
             }
@@ -321,6 +328,7 @@ fun RuleEditorDialog(
                 modifier = Modifier
                     .fillMaxWidth()
                     .heightIn(max = 520.dp)
+                    .testTag(UiTestTags.RULE_EDITOR_DIALOG)
                     .verticalScroll(contentScrollState),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
@@ -359,7 +367,9 @@ fun RuleEditorDialog(
                     OutlinedTextField(
                         value = displaySender,
                         onValueChange = onDisplaySenderChange,
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag(UiTestTags.RULE_DISPLAY_SENDER_INPUT),
                         label = { Text(stringResource(R.string.rule_sender_display_label)) },
                         supportingText = { Text(stringResource(R.string.rule_sender_display_support)) },
                     )
@@ -378,7 +388,9 @@ fun RuleEditorDialog(
                 OutlinedTextField(
                     value = keywordText,
                     onValueChange = onKeywordTextChange,
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag(UiTestTags.RULE_KEYWORD_INPUT),
                     label = { Text(stringResource(R.string.rule_keyword_label)) },
                     supportingText = { Text(stringResource(R.string.rule_keyword_support)) },
                 )
@@ -438,7 +450,11 @@ fun RuleEditorDialog(
             }
         },
         confirmButton = {
-            Button(onClick = onSave, enabled = senderInputValid && keywordText.isNotBlank()) {
+            Button(
+                modifier = Modifier.testTag(UiTestTags.RULE_SAVE_BUTTON),
+                onClick = onSave,
+                enabled = senderInputValid && keywordText.isNotBlank(),
+            ) {
                 Text(stringResource(if (isEditMode) R.string.action_update else R.string.rule_save))
             }
         },

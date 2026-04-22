@@ -1,0 +1,107 @@
+package com.example.mysmscode
+
+import android.content.Intent
+import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.platform.app.InstrumentationRegistry
+import com.example.mysmscode.domain.MonitoringPersistenceState
+import com.example.mysmscode.domain.MonitoringRecoveryTrigger
+import kotlinx.coroutines.runBlocking
+import org.junit.After
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
+import org.junit.Before
+import org.junit.Test
+import org.junit.runner.RunWith
+
+@RunWith(AndroidJUnit4::class)
+class MonitoringRecoveryIntegrationTest {
+
+    private lateinit var harness: AndroidTestHarness
+
+    @Before
+    fun setUp() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        harness = installTestHarness(context)
+    }
+
+    @After
+    fun tearDown() {
+        harness.close()
+    }
+
+    @Test
+    fun stopMonitoring_persistsStoppedByUserStateBeforeServiceStops() {
+        runBlocking {
+            harness.container.settingsRepository.saveMonitoringState(
+                MonitoringPersistenceState(
+                    monitoringEnabled = true,
+                    stoppedByUser = false,
+                )
+            )
+        }
+
+        MonitoringForegroundService.stopMonitoring(harness.appContext)
+
+        waitUntil("停止监控后应持久化 stoppedByUser=true") {
+            val state = runBlocking { harness.container.settingsRepository.getMonitoringState() }
+            state.stoppedByUser && !state.monitoringEnabled && state.lastMonitoringStoppedAt != null
+        }
+    }
+
+    @Test
+    fun bootCompleted_recoversMonitoringWhenStateIsActive() {
+        runBlocking {
+            harness.container.settingsRepository.saveMonitoringState(
+                MonitoringPersistenceState(
+                    monitoringEnabled = true,
+                    stoppedByUser = false,
+                )
+            )
+        }
+
+        MonitoringRecoveryReceiver().handleRecoveryForTest(
+            harness.appContext,
+            Intent.ACTION_BOOT_COMPLETED,
+        )
+
+        waitUntil("开机广播后应恢复监控并记录恢复来源") {
+            val state = runBlocking { harness.container.settingsRepository.getMonitoringState() }
+            state.monitoringEnabled &&
+                !state.stoppedByUser &&
+                state.lastRecoveryTrigger == MonitoringRecoveryTrigger.BOOT_COMPLETED.name &&
+                state.lastRecoveryStartedAt != null
+        }
+    }
+
+    @Test
+    fun bootCompleted_doesNotRecoverWhenUserStoppedMonitoring() {
+        runBlocking {
+            harness.container.settingsRepository.saveMonitoringState(
+                MonitoringPersistenceState(
+                    monitoringEnabled = false,
+                    stoppedByUser = true,
+                    lastMonitoringStoppedAt = System.currentTimeMillis(),
+                )
+            )
+        }
+
+        MonitoringRecoveryReceiver().handleRecoveryForTest(
+            harness.appContext,
+            Intent.ACTION_BOOT_COMPLETED,
+        )
+
+        assertStaysTrue("用户主动停止后不应被开机恢复重新拉起") {
+            val state = runBlocking { harness.container.settingsRepository.getMonitoringState() }
+            !state.monitoringEnabled &&
+                state.stoppedByUser &&
+                state.lastRecoveryStartedAt == null &&
+                state.lastRecoveryTrigger == null
+        }
+
+        val finalState = runBlocking { harness.container.settingsRepository.getMonitoringState() }
+        assertFalse(finalState.monitoringEnabled)
+        assertTrue(finalState.stoppedByUser)
+        assertNull(finalState.lastRecoveryTrigger)
+    }
+}

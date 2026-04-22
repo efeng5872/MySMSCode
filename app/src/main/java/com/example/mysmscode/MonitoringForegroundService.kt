@@ -26,7 +26,6 @@ import com.example.mysmscode.domain.buildRetrySchedulingPlan
 import com.example.mysmscode.domain.canDispatch
 import com.example.mysmscode.domain.shouldProcessIncomingSms
 import com.example.mysmscode.domain.shouldProcessRetryWork
-import com.example.mysmscode.network.WebhookDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -43,7 +42,6 @@ class MonitoringForegroundService : Service() {
     private val outcomeUseCase = CreateProcessingOutcomeUseCase()
     private val finalizeOutcomeUseCase = FinalizeForwardingOutcomeUseCase()
     private val retryFailedAttemptUseCase = RetryFailedAttemptUseCase()
-    private val webhookDispatcher = WebhookDispatcher()
     private val retryMutex = Mutex()
 
     override fun onCreate() {
@@ -196,7 +194,7 @@ class MonitoringForegroundService : Service() {
             )
             val dispatchResults = initialOutcome.attempts.mapNotNull { attempt ->
                 robots.firstOrNull { it.id == attempt.robotId && it.canDispatch() }?.let { robot ->
-                    webhookDispatcher.dispatch(robot, forwardMessage)
+                    container.webhookDispatcher.dispatch(robot, forwardMessage)
                 }
             }
             val finalOutcome = if (initialOutcome.attempts.isEmpty()) {
@@ -249,7 +247,7 @@ class MonitoringForegroundService : Service() {
                 recoverable = false,
             )
         } else {
-            webhookDispatcher.dispatch(
+            container.webhookDispatcher.dispatch(
                 robot = robot,
                 message = ForwardMessage(
                     senderNumber = failedAttempt.senderNumber,

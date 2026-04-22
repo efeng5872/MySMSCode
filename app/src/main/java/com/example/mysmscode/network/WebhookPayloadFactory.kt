@@ -49,11 +49,15 @@ data class WebhookPostResult(
     val responseBody: String? = null,
 )
 
+interface WebhookDispatching {
+    fun dispatch(robot: RobotEndpoint, message: ForwardMessage): ForwardDispatchResult
+}
+
 class WebhookDispatcher(
     private val payloadFactory: WebhookPayloadFactory = WebhookPayloadFactory(),
     private val poster: (String, String) -> WebhookPostResult = ::postJson,
-) {
-    fun dispatch(robot: RobotEndpoint, message: ForwardMessage): ForwardDispatchResult {
+) : WebhookDispatching {
+    override fun dispatch(robot: RobotEndpoint, message: ForwardMessage): ForwardDispatchResult {
         val payload = when (robot.type) {
             RobotType.FEISHU -> payloadFactory.createFeishuPayload(message)
             RobotType.WECOM -> payloadFactory.createWeComPayload(message)

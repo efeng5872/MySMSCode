@@ -56,6 +56,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -446,6 +447,7 @@ private fun ConfigurationWorkbench(container: AppContainer) {
             )
             if (statusMessage.isNotBlank()) {
                 Text(
+                    modifier = Modifier.testTag(UiTestTags.STATUS_MESSAGE),
                     text = statusMessage,
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.primary,

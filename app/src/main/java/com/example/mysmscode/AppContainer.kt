@@ -6,18 +6,32 @@ import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.example.mysmscode.data.AppDatabase
 import com.example.mysmscode.data.KeystoreWebhookCipher
+import com.example.mysmscode.data.WebhookCipher
 import com.example.mysmscode.data.RoomProcessingRepository
 import com.example.mysmscode.data.RoomRobotEndpointRepository
 import com.example.mysmscode.data.RoomSenderRuleRepository
 import com.example.mysmscode.data.RoomSettingsRepository
+import com.example.mysmscode.network.WebhookDispatcher
+import com.example.mysmscode.network.WebhookDispatching
 
 class MySmsCodeApplication : Application() {
-    val container: AppContainer by lazy {
+    private val defaultContainer: AppContainer by lazy {
         AppContainer(this)
     }
+
+    @Volatile
+    var containerOverride: AppContainer? = null
+
+    val container: AppContainer
+        get() = containerOverride ?: defaultContainer
 }
 
-class AppContainer(application: Application) {
+class AppContainer(
+    application: Application,
+    private val databaseOverride: AppDatabase? = null,
+    private val webhookCipherOverride: WebhookCipher? = null,
+    private val webhookDispatcherOverride: WebhookDispatching? = null,
+) {
     private val migration4To5 = object : Migration(4, 5) {
         override fun migrate(db: SupportSQLiteDatabase) {
             db.execSQL(
@@ -49,7 +63,7 @@ class AppContainer(application: Application) {
     }
 
     val database: AppDatabase by lazy {
-        Room.databaseBuilder(
+        databaseOverride ?: Room.databaseBuilder(
             application,
             AppDatabase::class.java,
             "mysmscode.db"
@@ -61,7 +75,7 @@ class AppContainer(application: Application) {
     val robotRepository: RoomRobotEndpointRepository by lazy {
         RoomRobotEndpointRepository(
             database.robotEndpointDao(),
-            KeystoreWebhookCipher(application),
+            webhookCipherOverride ?: KeystoreWebhookCipher(application),
         )
     }
 
@@ -78,5 +92,9 @@ class AppContainer(application: Application) {
 
     val processingRepository: RoomProcessingRepository by lazy {
         RoomProcessingRepository(database, database.processingDao())
+    }
+
+    val webhookDispatcher: WebhookDispatching by lazy {
+        webhookDispatcherOverride ?: WebhookDispatcher()
     }
 }
