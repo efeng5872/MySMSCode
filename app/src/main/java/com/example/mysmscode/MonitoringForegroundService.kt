@@ -238,7 +238,7 @@ class MonitoringForegroundService : Service() {
 
     private suspend fun executeRetry(container: AppContainer, failedAttempt: RetryableAttempt) {
         val retryPolicyConfig = container.settingsRepository.getRetryPolicyConfig()
-        val robot = container.robotRepository.getAll().firstOrNull { it.id == failedAttempt.robotId && it.canDispatch() }
+        val robot = container.robotRepository.findById(failedAttempt.robotId)?.takeIf { it.canDispatch() }
         val dispatchResult = if (robot == null) {
             ForwardDispatchResult(
                 robotId = failedAttempt.robotId,

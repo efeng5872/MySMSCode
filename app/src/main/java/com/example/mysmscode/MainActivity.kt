@@ -1758,10 +1758,6 @@ private fun readPermissionSnapshot(context: Context): AppPermissionSnapshot {
             context,
             Manifest.permission.RECEIVE_SMS,
         ) == PackageManager.PERMISSION_GRANTED,
-        readSmsGranted = ContextCompat.checkSelfPermission(
-            context,
-            Manifest.permission.READ_SMS,
-        ) == PackageManager.PERMISSION_GRANTED,
         postNotificationsGranted = !requiresNotificationPermission() || ContextCompat.checkSelfPermission(
             context,
             Manifest.permission.POST_NOTIFICATIONS,
@@ -1780,7 +1776,6 @@ private fun readMonitoringServiceRunning(context: Context): Boolean {
 
 private fun requiredPermissions(snapshot: AppPermissionSnapshot): Array<String> = buildList {
     if (!snapshot.receiveSmsGranted) add(Manifest.permission.RECEIVE_SMS)
-    if (!snapshot.readSmsGranted) add(Manifest.permission.READ_SMS)
     if (snapshot.notificationPermissionRequired && !snapshot.postNotificationsGranted) {
         add(Manifest.permission.POST_NOTIFICATIONS)
     }

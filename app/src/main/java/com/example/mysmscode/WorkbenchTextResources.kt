@@ -38,7 +38,6 @@ fun buildPermissionUiState(
 
 fun missingPermissionLabels(context: Context, snapshot: AppPermissionSnapshot): List<String> = buildList {
     if (!snapshot.receiveSmsGranted) add(context.getString(R.string.permission_receive_sms))
-    if (!snapshot.readSmsGranted) add(context.getString(R.string.permission_read_sms))
     if (snapshot.notificationPermissionRequired && !snapshot.postNotificationsGranted) {
         add(context.getString(R.string.permission_notifications))
     }

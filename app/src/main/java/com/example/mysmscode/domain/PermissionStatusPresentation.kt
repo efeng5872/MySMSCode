@@ -4,14 +4,12 @@ private fun zh(vararg codes: Int): String = codes.map(Int::toChar).joinToString(
 
 data class AppPermissionSnapshot(
     val receiveSmsGranted: Boolean,
-    val readSmsGranted: Boolean,
     val postNotificationsGranted: Boolean,
     val notificationPermissionRequired: Boolean,
 ) {
     val missingPermissions: List<String>
         get() = buildList {
             if (!receiveSmsGranted) add(zh(0x63A5, 0x6536, 0x77ED, 0x4FE1))
-            if (!readSmsGranted) add(zh(0x8BFB, 0x53D6, 0x77ED, 0x4FE1))
             if (notificationPermissionRequired && !postNotificationsGranted) add(zh(0x901A, 0x77E5, 0x6743, 0x9650))
         }
 

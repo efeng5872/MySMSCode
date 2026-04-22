@@ -14,7 +14,6 @@ class PermissionStatusPresentationTest {
         val uiState = buildPermissionUiState(
             AppPermissionSnapshot(
                 receiveSmsGranted = false,
-                readSmsGranted = true,
                 postNotificationsGranted = true,
                 notificationPermissionRequired = true,
             )
@@ -31,7 +30,6 @@ class PermissionStatusPresentationTest {
         val uiState = buildPermissionUiState(
             AppPermissionSnapshot(
                 receiveSmsGranted = true,
-                readSmsGranted = true,
                 postNotificationsGranted = false,
                 notificationPermissionRequired = true,
             )
@@ -46,7 +44,6 @@ class PermissionStatusPresentationTest {
         val uiState = buildPermissionUiState(
             AppPermissionSnapshot(
                 receiveSmsGranted = true,
-                readSmsGranted = true,
                 postNotificationsGranted = false,
                 notificationPermissionRequired = false,
             )

@@ -12,9 +12,7 @@ import kotlinx.coroutines.launch
 class MonitoringRecoveryReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         val trigger = when (intent.action) {
-            Intent.ACTION_BOOT_COMPLETED,
-            Intent.ACTION_LOCKED_BOOT_COMPLETED,
-            -> MonitoringRecoveryTrigger.BOOT_COMPLETED
+            Intent.ACTION_BOOT_COMPLETED -> MonitoringRecoveryTrigger.BOOT_COMPLETED
 
             Intent.ACTION_MY_PACKAGE_REPLACED -> MonitoringRecoveryTrigger.PACKAGE_REPLACED
             else -> return

@@ -57,6 +57,44 @@ class RoomRobotEndpointRepositoryEncryptionTest {
     }
 
     @Test
+    fun findById_onlyDecryptsRequestedRobot() = runBlocking {
+        val dao = FakeRobotEndpointDao()
+        val cipher = CountingWebhookCipher()
+        dao.insert(
+            RobotEndpointEntity(
+                id = 0L,
+                name = "机器人A",
+                type = RobotType.FEISHU,
+                enabled = true,
+                webhookUrl = cipher.encrypt("https://open.feishu.cn/open-apis/bot/v2/hook/a"),
+                createdAt = 1L,
+                updatedAt = 1L,
+            )
+        )
+        dao.insert(
+            RobotEndpointEntity(
+                id = 0L,
+                name = "机器人B",
+                type = RobotType.WECOM,
+                enabled = true,
+                webhookUrl = cipher.encrypt("https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=b"),
+                createdAt = 2L,
+                updatedAt = 2L,
+            )
+        )
+        val repository = RoomRobotEndpointRepository(dao, cipher)
+
+        val robot = repository.findById(2L)
+
+        assertEquals("机器人B", robot?.name)
+        assertEquals(1, cipher.decryptCallCount)
+        assertEquals(
+            listOf("enc:https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=b"),
+            cipher.decryptedValues,
+        )
+    }
+
+    @Test
     fun getAll_migratesPlainTextWebhookToCipherTextOnRead() = runBlocking {
         val dao = FakeRobotEndpointDao()
         dao.insert(
@@ -129,6 +167,22 @@ private class FakeWebhookCipher : WebhookCipher {
     }
 
     override fun decrypt(storedValue: String): String = storedValue.removePrefix("enc:")
+}
+
+private class CountingWebhookCipher : WebhookCipher {
+    var decryptCallCount: Int = 0
+        private set
+    val decryptedValues = mutableListOf<String>()
+
+    override fun isEncrypted(value: String): Boolean = value.startsWith("enc:")
+
+    override fun encrypt(plainText: String): String = "enc:$plainText"
+
+    override fun decrypt(storedValue: String): String {
+        decryptCallCount += 1
+        decryptedValues += storedValue
+        return storedValue.removePrefix("enc:")
+    }
 }
 
 private class FakeRobotEndpointDao : RobotEndpointDao {

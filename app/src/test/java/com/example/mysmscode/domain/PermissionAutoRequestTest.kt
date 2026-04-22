@@ -10,7 +10,6 @@ class PermissionAutoRequestTest {
     fun shouldAutoRequestPermissions_returnsTrueWhenPermissionsMissingAndNotRequestedYet() {
         val snapshot = AppPermissionSnapshot(
             receiveSmsGranted = false,
-            readSmsGranted = true,
             postNotificationsGranted = true,
             notificationPermissionRequired = true,
         )
@@ -22,7 +21,6 @@ class PermissionAutoRequestTest {
     fun shouldAutoRequestPermissions_returnsFalseWhenAlreadyRequestedAutomatically() {
         val snapshot = AppPermissionSnapshot(
             receiveSmsGranted = false,
-            readSmsGranted = true,
             postNotificationsGranted = true,
             notificationPermissionRequired = true,
         )
@@ -34,7 +32,6 @@ class PermissionAutoRequestTest {
     fun shouldAutoRequestPermissions_returnsFalseWhenAllPermissionsAreGranted() {
         val snapshot = AppPermissionSnapshot(
             receiveSmsGranted = true,
-            readSmsGranted = true,
             postNotificationsGranted = true,
             notificationPermissionRequired = true,
         )
