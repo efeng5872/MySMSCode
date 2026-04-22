@@ -4,6 +4,8 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 import java.time.ZoneId
 
+private fun zh(vararg codes: Int): String = codes.map(Int::toChar).joinToString("")
+
 class SmsRecordPresentationTest {
 
     private val preview = SmsRecordPreview(
@@ -24,14 +26,14 @@ class SmsRecordPresentationTest {
 
     @Test
     fun statusLabel_mapsKnownStatusesToReadableText() {
-        assertEquals("配置异常", preview.statusLabel())
-        assertEquals("转发成功", preview.copy(status = "SUCCESS").statusLabel())
-        assertEquals("关键字未命中", preview.copy(status = "NOT_MATCHED").statusLabel())
+        assertEquals(zh(0x914D, 0x7F6E, 0x5F02, 0x5E38), preview.statusLabel())
+        assertEquals(zh(0x8F6C, 0x53D1, 0x6210, 0x529F), preview.copy(status = "SUCCESS").statusLabel())
+        assertEquals(zh(0x5173, 0x952E, 0x5B57, 0x672A, 0x547D, 0x4E2D), preview.copy(status = "NOT_MATCHED").statusLabel())
     }
 
     @Test
     fun sourceLabel_mapsKnownSourcesToReadableText() {
-        assertEquals("模拟注入", preview.sourceLabel())
-        assertEquals("收到短信", preview.copy(source = "REAL_SMS").sourceLabel())
+        assertEquals(zh(0x6A21, 0x62DF, 0x6CE8, 0x5165), preview.sourceLabel())
+        assertEquals(zh(0x6536, 0x5230, 0x77ED, 0x4FE1), preview.copy(source = "REAL_SMS").sourceLabel())
     }
 }

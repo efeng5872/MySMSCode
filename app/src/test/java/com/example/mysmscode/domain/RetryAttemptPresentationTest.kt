@@ -4,6 +4,8 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 import java.time.ZoneId
 
+private fun zh(vararg codes: Int): String = codes.map(Int::toChar).joinToString("")
+
 class RetryAttemptPresentationTest {
 
     private val scheduledAttempt = RetryableAttempt(
@@ -29,7 +31,7 @@ class RetryAttemptPresentationTest {
 
     @Test
     fun autoRetryStatusLabel_reportsScheduledRetryWhenNextWindowExists() {
-        assertEquals("已安排自动重试", scheduledAttempt.autoRetryStatusLabel())
+        assertEquals(zh(0x5DF2, 0x5B89, 0x6392, 0x81EA, 0x52A8, 0x91CD, 0x8BD5), scheduledAttempt.autoRetryStatusLabel())
     }
 
     @Test
@@ -39,7 +41,7 @@ class RetryAttemptPresentationTest {
             nextRetryAt = null,
         )
 
-        assertEquals("自动重试次数已耗尽", exhaustedAttempt.autoRetryStatusLabel())
+        assertEquals(zh(0x81EA, 0x52A8, 0x91CD, 0x8BD5, 0x6B21, 0x6570, 0x5DF2, 0x8017, 0x5C3D), exhaustedAttempt.autoRetryStatusLabel())
     }
 
     @Test
@@ -50,7 +52,7 @@ class RetryAttemptPresentationTest {
             nextRetryAt = null,
         )
 
-        assertEquals("不可自动重试", nonRecoverableAttempt.autoRetryStatusLabel())
+        assertEquals(zh(0x4E0D, 0x53EF, 0x81EA, 0x52A8, 0x91CD, 0x8BD5), nonRecoverableAttempt.autoRetryStatusLabel())
     }
 
     @Test

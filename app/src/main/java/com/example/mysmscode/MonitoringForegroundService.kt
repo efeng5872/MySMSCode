@@ -13,6 +13,8 @@ import com.example.mysmscode.domain.FinalizeForwardingOutcomeUseCase
 import com.example.mysmscode.domain.ForwardAttemptStatus
 import com.example.mysmscode.domain.ForwardDispatchResult
 import com.example.mysmscode.domain.ForwardMessage
+import com.example.mysmscode.domain.markMonitoringStarted
+import com.example.mysmscode.domain.markMonitoringStoppedByUser
 import com.example.mysmscode.domain.ProcessIncomingSmsUseCase
 import com.example.mysmscode.domain.RetrySchedulingPlan
 import com.example.mysmscode.domain.RetryFailedAttemptUseCase
@@ -21,12 +23,15 @@ import com.example.mysmscode.domain.SmsSource
 import com.example.mysmscode.domain.MonitoringRecoveryTrigger
 import com.example.mysmscode.domain.buildProcessingTrace
 import com.example.mysmscode.domain.buildRetrySchedulingPlan
+import com.example.mysmscode.domain.shouldProcessIncomingSms
+import com.example.mysmscode.domain.shouldProcessRetryWork
 import com.example.mysmscode.network.WebhookDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
@@ -57,6 +62,11 @@ class MonitoringForegroundService : Service() {
                     val sourceName = intent.getStringExtra(EXTRA_SMS_SOURCE)
                     val source = sourceName?.let { runCatching { SmsSource.valueOf(it) }.getOrNull() } ?: SmsSource.REAL_SMS
                     serviceScope.launch {
+                        if (!shouldProcessIncomingSms()) {
+                            DebugTraceLogger.d("service_start ignored action=$ACTION_PROCESS_SMS because monitoring is disabled source=$source")
+                            syncRetrySchedule()
+                            return@launch
+                        }
                         handleIncomingSms(senderNumber, messageBody, source)
                         processDueRetries()
                         syncRetrySchedule()
@@ -78,7 +88,7 @@ class MonitoringForegroundService : Service() {
 
             ACTION_STOP_MONITORING -> {
                 DebugTraceLogger.d("service_monitoring_stop_requested")
-                serviceScope.launch {
+                runBlocking(Dispatchers.IO) {
                     persistMonitoringStoppedByUser()
                 }
                 RetryAlarmScheduler(applicationContext).cancel()
@@ -91,6 +101,11 @@ class MonitoringForegroundService : Service() {
                 val attemptId = intent.getLongExtra(EXTRA_ATTEMPT_ID, -1L)
                 if (attemptId > 0L) {
                     serviceScope.launch {
+                        if (!shouldProcessRetryWork()) {
+                            DebugTraceLogger.d("service_retry ignored attemptId=$attemptId because monitoring is disabled")
+                            RetryAlarmScheduler(applicationContext).cancel()
+                            return@launch
+                        }
                         handleRetryAttempt(attemptId)
                         syncRetrySchedule()
                     }
@@ -101,6 +116,11 @@ class MonitoringForegroundService : Service() {
 
             ACTION_PROCESS_DUE_RETRIES -> {
                 serviceScope.launch {
+                    if (!shouldProcessRetryWork()) {
+                        DebugTraceLogger.d("service_retry_due ignored because monitoring is disabled")
+                        RetryAlarmScheduler(applicationContext).cancel()
+                        return@launch
+                    }
                     processDueRetries()
                     syncRetrySchedule()
                 }
@@ -122,12 +142,9 @@ class MonitoringForegroundService : Service() {
         val now = System.currentTimeMillis()
         val state = settingsRepository.getMonitoringState()
         settingsRepository.saveMonitoringState(
-            state.copy(
-                monitoringEnabled = true,
-                stoppedByUser = false,
-                lastMonitoringStartedAt = now,
-                lastRecoveryStartedAt = recoveryTriggerName?.let { now },
-                lastRecoveryTrigger = recoveryTriggerName,
+            state.markMonitoringStarted(
+                now = now,
+                recoveryTriggerName = recoveryTriggerName,
             )
         )
     }
@@ -136,13 +153,17 @@ class MonitoringForegroundService : Service() {
         val settingsRepository = (application as MySmsCodeApplication).container.settingsRepository
         val now = System.currentTimeMillis()
         val state = settingsRepository.getMonitoringState()
-        settingsRepository.saveMonitoringState(
-            state.copy(
-                monitoringEnabled = false,
-                stoppedByUser = true,
-                lastMonitoringStoppedAt = now,
-            )
-        )
+        settingsRepository.saveMonitoringState(state.markMonitoringStoppedByUser(now))
+    }
+
+    private suspend fun shouldProcessIncomingSms(): Boolean {
+        val settingsRepository = (application as MySmsCodeApplication).container.settingsRepository
+        return settingsRepository.getMonitoringState().shouldProcessIncomingSms()
+    }
+
+    private suspend fun shouldProcessRetryWork(): Boolean {
+        val settingsRepository = (application as MySmsCodeApplication).container.settingsRepository
+        return settingsRepository.getMonitoringState().shouldProcessRetryWork()
     }
 
     private suspend fun handleIncomingSms(senderNumber: String, messageBody: String, source: SmsSource) {

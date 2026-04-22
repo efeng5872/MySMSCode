@@ -6,6 +6,10 @@ import android.content.Intent
 import android.provider.Telephony
 import android.telephony.SmsMessage
 import com.example.mysmscode.domain.buildIncomingSmsTrace
+import com.example.mysmscode.domain.shouldProcessIncomingSms
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 
 class IncomingSmsReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
@@ -29,7 +33,23 @@ class IncomingSmsReceiver : BroadcastReceiver() {
                     partCount = messages.size,
                 )
             )
-            MonitoringForegroundService.enqueueIncomingSms(context, senderNumber, messageBody)
+            val pendingResult = goAsync()
+            val appContext = context.applicationContext
+            CoroutineScope(Dispatchers.IO).launch {
+                try {
+                    val settingsRepository = (appContext as MySmsCodeApplication).container.settingsRepository
+                    val state = settingsRepository.getMonitoringState()
+                    if (state.shouldProcessIncomingSms()) {
+                        MonitoringForegroundService.enqueueIncomingSms(appContext, senderNumber, messageBody)
+                    } else {
+                        DebugTraceLogger.d(
+                            "incoming_sms ignored because monitoring is disabled sender=$senderNumber enabled=${state.monitoringEnabled} stoppedByUser=${state.stoppedByUser}"
+                        )
+                    }
+                } finally {
+                    pendingResult.finish()
+                }
+            }
         } else {
             DebugTraceLogger.w("incoming_sms ignored because sender or body was blank")
         }
