@@ -2,6 +2,7 @@ package com.example.mysmscode.data
 
 import com.example.mysmscode.domain.RobotEndpoint
 import com.example.mysmscode.domain.RobotType
+import com.example.mysmscode.domain.SenderMatchMode
 import com.example.mysmscode.domain.SenderRule
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -59,6 +60,34 @@ class InMemoryRepositoriesTest {
         )
 
         assertTrue(result is RepositorySaveResult.DuplicateSenderNumber)
+    }
+
+    @Test
+    fun logicallyEquivalentSenderRules_areRejected() {
+        val repository = InMemorySenderRuleRepository()
+
+        repository.save(
+            SenderRule(
+                senderNumber = "13608083211",
+                enabled = true,
+                keywords = listOf("code"),
+                selectedRobotIds = listOf(1L),
+            )
+        )
+
+        val result = repository.save(
+            SenderRule(
+                senderNumber = "+8613608083211",
+                senderMatchMode = SenderMatchMode.INTERNATIONAL_NUMBER,
+                enabled = true,
+                keywords = listOf("otp"),
+                selectedRobotIds = listOf(2L),
+            )
+        )
+
+        assertTrue(result is RepositorySaveResult.ConflictingSenderRule)
+        result as RepositorySaveResult.ConflictingSenderRule
+        assertEquals("13608083211", result.existingSenderNumber)
     }
 
     @Test

@@ -12,29 +12,34 @@ class ProcessIncomingSmsUseCase(
         rules: List<SenderRule>,
         robots: List<RobotEndpoint>,
     ): SmsProcessingResult {
-        val rule = rules.firstOrNull {
-            phoneNumberNormalizer.matches(
-                configuredSender = it.senderNumber,
-                incomingSender = senderNumber,
-                matchMode = it.senderMatchMode,
-            )
-        }
-            ?: return SmsProcessingResult.Ignored
-        if (!rule.enabled) {
+        val matchedRules = prioritizeSenderMatchedRules(
+            senderNumber = senderNumber,
+            rules = rules.filter(SenderRule::enabled),
+            phoneNumberNormalizer = phoneNumberNormalizer,
+        )
+        if (matchedRules.isEmpty()) {
             return SmsProcessingResult.Ignored
         }
 
-        val matchedKeyword = findMatchedKeyword(messageBody, rule.keywords)
-            ?: return SmsProcessingResult.NotMatched(
+        val matchedRuleWithKeyword = matchedRules.firstNotNullOfOrNull { rule ->
+            findMatchedKeyword(messageBody, rule.keywords)?.let { keyword ->
+                rule to keyword
+            }
+        }
+        if (matchedRuleWithKeyword == null) {
+            return SmsProcessingResult.NotMatched(
                 record = SmsProcessingRecord(
                     senderNumber = senderNumber,
                     messageBody = messageBody,
                     status = SmsProcessingStatus.NOT_MATCHED,
                 )
             )
+        }
+
+        val (rule, matchedKeyword) = matchedRuleWithKeyword
 
         val selectedEnabledRobots = robots.filter { robot ->
-            robot.enabled && rule.selectedRobotIds.contains(robot.id)
+            robot.canDispatch() && rule.selectedRobotIds.contains(robot.id)
         }
 
         if (selectedEnabledRobots.isEmpty()) {

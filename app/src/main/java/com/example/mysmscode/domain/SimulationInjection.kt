@@ -83,13 +83,11 @@ fun findMatchingSimulationRule(
     rules: List<SenderRule>,
     phoneNumberNormalizer: PhoneNumberNormalizer = PhoneNumberNormalizer(),
 ): SenderRule? {
-    return rules.firstOrNull { rule ->
-        rule.enabled && phoneNumberNormalizer.matches(
-            configuredSender = rule.senderNumber,
-            incomingSender = senderNumber,
-            matchMode = rule.senderMatchMode,
-        )
-    }
+    return prioritizeSenderMatchedRules(
+        senderNumber = senderNumber,
+        rules = rules.filter(SenderRule::enabled),
+        phoneNumberNormalizer = phoneNumberNormalizer,
+    ).firstOrNull()
 }
 
 fun findInjectedSimulationRecord(

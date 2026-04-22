@@ -9,6 +9,10 @@ sealed interface RepositorySaveResult<out T> {
 
     data object DuplicateSenderNumber : RepositorySaveResult<Nothing>
 
+    data class ConflictingSenderRule(
+        val existingSenderNumber: String,
+    ) : RepositorySaveResult<Nothing>
+
     data object NotFound : RepositorySaveResult<Nothing>
 
     data object Failed : RepositorySaveResult<Nothing>

@@ -45,6 +45,35 @@ class SimulationInjectionFlowTest {
     }
 
     @Test
+    fun findMatchingSimulationRule_prefersDisplayValueRuleWhenMultipleRulesMatch() {
+        val matched = findMatchingSimulationRule(
+            senderNumber = "13608083211",
+            rules = listOf(
+                SenderRule(
+                    id = 1L,
+                    senderNumber = "+8613608083211",
+                    senderMatchMode = SenderMatchMode.INTERNATIONAL_NUMBER,
+                    enabled = true,
+                    keywords = listOf("code"),
+                    selectedRobotIds = listOf(1L),
+                    updatedAt = 200L,
+                ),
+                SenderRule(
+                    id = 2L,
+                    senderNumber = "13608083211",
+                    senderMatchMode = SenderMatchMode.DISPLAY_VALUE,
+                    enabled = true,
+                    keywords = listOf("code"),
+                    selectedRobotIds = listOf(2L),
+                    updatedAt = 100L,
+                )
+            ),
+        )
+
+        assertEquals(2L, matched?.id)
+    }
+
+    @Test
     fun buildSimulationFeedbackPlan_returnsPhasedMessages() {
         val plan = buildSimulationFeedbackPlan("10690001")
 

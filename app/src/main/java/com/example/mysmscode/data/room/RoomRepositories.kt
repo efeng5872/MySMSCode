@@ -9,10 +9,13 @@ import com.example.mysmscode.domain.RetryExecution
 import com.example.mysmscode.domain.RetryableAttempt
 import com.example.mysmscode.domain.RobotEndpoint
 import com.example.mysmscode.domain.RobotType
+import com.example.mysmscode.domain.RobotWebhookStatus
+import com.example.mysmscode.domain.PhoneNumberNormalizer
 import com.example.mysmscode.domain.SenderRule
 import com.example.mysmscode.domain.SmsRecordDraft
 import com.example.mysmscode.domain.SmsRecordPreview
 import com.example.mysmscode.domain.buildPersistenceTrace
+import com.example.mysmscode.domain.hasLogicalSenderConflictWith
 import com.example.mysmscode.data.WebhookCipher
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -68,7 +71,17 @@ class RoomRobotEndpointRepository(
 
     private suspend fun decryptAndMigrateIfNeeded(entity: RobotEndpointEntity): RobotEndpoint {
         return if (webhookCipher.isEncrypted(entity.webhookUrl)) {
-            entity.copy(webhookUrl = webhookCipher.decrypt(entity.webhookUrl)).toDomain()
+            runCatching {
+                entity.copy(webhookUrl = webhookCipher.decrypt(entity.webhookUrl)).toDomain()
+            }.getOrElse { error ->
+                DebugTraceLogger.w(
+                    "robot_webhook_decrypt_failed id=${entity.id} name=${entity.name} error=${error.message ?: error::class.java.simpleName}"
+                )
+                entity.toDomain().copy(
+                    webhookUrl = "",
+                    webhookStatus = RobotWebhookStatus.REENTRY_REQUIRED,
+                )
+            }
         } else {
             val encryptedWebhook = encryptWebhookOrThrow(entity.webhookUrl)
             robotEndpointDao.update(entity.copy(webhookUrl = encryptedWebhook))
@@ -84,9 +97,13 @@ class RoomRobotEndpointRepository(
 class RoomSenderRuleRepository(
     private val database: AppDatabase,
     private val senderRuleDao: SenderRuleDao,
+    private val phoneNumberNormalizer: PhoneNumberNormalizer = PhoneNumberNormalizer(),
 ) {
     suspend fun save(rule: SenderRule): RepositorySaveResult<SenderRule> = try {
         database.withTransaction {
+            findConflictingRule(rule)?.let { conflictingRule ->
+                return@withTransaction RepositorySaveResult.ConflictingSenderRule(conflictingRule.senderNumber)
+            }
             val ruleId = senderRuleDao.insert(SenderRuleEntity.fromDomain(rule))
             val crossRefs = rule.selectedRobotIds.mapIndexed { index, robotId ->
                 SenderRuleRobotCrossRef(
@@ -106,6 +123,9 @@ class RoomSenderRuleRepository(
 
     suspend fun update(rule: SenderRule): RepositorySaveResult<SenderRule> = try {
         database.withTransaction {
+            findConflictingRule(rule)?.let { conflictingRule ->
+                return@withTransaction RepositorySaveResult.ConflictingSenderRule(conflictingRule.senderNumber)
+            }
             senderRuleDao.update(SenderRuleEntity.fromDomain(rule))
             senderRuleDao.deleteCrossRefsForRule(rule.id)
             val crossRefs = rule.selectedRobotIds.mapIndexed { index, robotId ->
@@ -146,6 +166,16 @@ class RoomSenderRuleRepository(
     fun observeAll(): Flow<List<SenderRule>> {
         return senderRuleDao.observeAll().map { rules ->
             rules.map(SenderRuleWithRobots::toDomain)
+        }
+    }
+
+    private suspend fun findConflictingRule(rule: SenderRule): SenderRule? {
+        return senderRuleDao.getAll().map(SenderRuleWithRobots::toDomain).firstOrNull { existingRule ->
+            existingRule.id != rule.id &&
+                rule.hasLogicalSenderConflictWith(
+                    existingRule,
+                    phoneNumberNormalizer = phoneNumberNormalizer,
+                )
         }
     }
 }

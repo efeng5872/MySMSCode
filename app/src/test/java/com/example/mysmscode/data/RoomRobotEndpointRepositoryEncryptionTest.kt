@@ -2,6 +2,7 @@ package com.example.mysmscode.data
 
 import com.example.mysmscode.domain.RobotEndpoint
 import com.example.mysmscode.domain.RobotType
+import com.example.mysmscode.domain.RobotWebhookStatus
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.runBlocking
@@ -94,6 +95,28 @@ class RoomRobotEndpointRepositoryEncryptionTest {
 
         assertEquals(RepositorySaveResult.Failed, result)
     }
+
+    @Test
+    fun findById_marksRobotForWebhookReentryWhenDecryptFails() = runBlocking {
+        val dao = FakeRobotEndpointDao()
+        dao.insert(
+            RobotEndpointEntity(
+                id = 0L,
+                name = "恢复后的机器人",
+                type = RobotType.FEISHU,
+                enabled = true,
+                webhookUrl = "enc:broken-payload",
+                createdAt = 100L,
+                updatedAt = 200L,
+            )
+        )
+        val repository = RoomRobotEndpointRepository(dao, DecryptFailingWebhookCipher())
+
+        val robot = repository.findById(1L)
+
+        assertEquals("", robot?.webhookUrl)
+        assertEquals(RobotWebhookStatus.REENTRY_REQUIRED, robot?.webhookStatus)
+    }
 }
 
 private class FakeWebhookCipher : WebhookCipher {
@@ -147,4 +170,14 @@ private class ThrowingWebhookCipher : WebhookCipher {
     }
 
     override fun decrypt(storedValue: String): String = storedValue
+}
+
+private class DecryptFailingWebhookCipher : WebhookCipher {
+    override fun isEncrypted(value: String): Boolean = value.startsWith("enc:")
+
+    override fun encrypt(plainText: String): String = "enc:$plainText"
+
+    override fun decrypt(storedValue: String): String {
+        throw IllegalStateException("key missing")
+    }
 }

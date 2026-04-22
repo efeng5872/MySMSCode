@@ -144,6 +144,34 @@ class ProcessIncomingSmsUseCaseTest {
         assertFalse(result.record.failureReason.isNullOrBlank())
     }
 
+    @Test
+    fun matchedRuleWithRobotRequiringWebhookReentry_isConfigurationFailure() {
+        val result = useCase.process(
+            senderNumber = "10690001",
+            messageBody = "验证码 1234",
+            rules = listOf(
+                SenderRule(
+                    senderNumber = "10690001",
+                    enabled = true,
+                    keywords = listOf("验证码"),
+                    selectedRobotIds = listOf(1L),
+                )
+            ),
+            robots = listOf(
+                RobotEndpoint(
+                    id = 1L,
+                    name = "Feishu Main",
+                    type = RobotType.FEISHU,
+                    enabled = true,
+                    webhookUrl = "",
+                    webhookStatus = RobotWebhookStatus.REENTRY_REQUIRED,
+                )
+            ),
+        )
+
+        assertTrue(result is SmsProcessingResult.ConfigurationFailed)
+    }
+
 
     @Test
     fun senderNumberMatching_normalizesChinaCountryCodeVariants() {
@@ -284,6 +312,147 @@ class ProcessIncomingSmsUseCaseTest {
         )
 
         assertTrue(result is SmsProcessingResult.Ignored)
+    }
+
+    @Test
+    fun overlappingRules_preferDisplayValueRuleWhenBothRulesMatchAndKeywordHits() {
+        val result = useCase.process(
+            senderNumber = "13608083211",
+            messageBody = "test verification code is 889900",
+            rules = listOf(
+                SenderRule(
+                    id = 1L,
+                    senderNumber = "+8613608083211",
+                    senderMatchMode = SenderMatchMode.INTERNATIONAL_NUMBER,
+                    enabled = true,
+                    keywords = listOf("code"),
+                    selectedRobotIds = listOf(2L),
+                    updatedAt = 200L,
+                ),
+                SenderRule(
+                    id = 2L,
+                    senderNumber = "13608083211",
+                    senderMatchMode = SenderMatchMode.DISPLAY_VALUE,
+                    enabled = true,
+                    keywords = listOf("code"),
+                    selectedRobotIds = listOf(1L),
+                    updatedAt = 100L,
+                )
+            ),
+            robots = listOf(
+                RobotEndpoint(
+                    id = 1L,
+                    name = "Feishu Main",
+                    type = RobotType.FEISHU,
+                    enabled = true,
+                    webhookUrl = "https://example.com/feishu",
+                ),
+                RobotEndpoint(
+                    id = 2L,
+                    name = "WeCom Main",
+                    type = RobotType.WECOM,
+                    enabled = true,
+                    webhookUrl = "https://example.com/wecom",
+                )
+            ),
+        )
+
+        assertTrue(result is SmsProcessingResult.PendingForward)
+        result as SmsProcessingResult.PendingForward
+        assertEquals(listOf(1L), result.attempts.map(ForwardPlan::robotId))
+    }
+
+    @Test
+    fun disabledOverlappingRule_doesNotShadowEnabledRule() {
+        val result = useCase.process(
+            senderNumber = "13608083211",
+            messageBody = "test verification code is 889900",
+            rules = listOf(
+                SenderRule(
+                    id = 1L,
+                    senderNumber = "13608083211",
+                    senderMatchMode = SenderMatchMode.DISPLAY_VALUE,
+                    enabled = false,
+                    keywords = listOf("code"),
+                    selectedRobotIds = listOf(1L),
+                ),
+                SenderRule(
+                    id = 2L,
+                    senderNumber = "+8613608083211",
+                    senderMatchMode = SenderMatchMode.INTERNATIONAL_NUMBER,
+                    enabled = true,
+                    keywords = listOf("code"),
+                    selectedRobotIds = listOf(2L),
+                )
+            ),
+            robots = listOf(
+                RobotEndpoint(
+                    id = 1L,
+                    name = "Feishu Main",
+                    type = RobotType.FEISHU,
+                    enabled = true,
+                    webhookUrl = "https://example.com/feishu",
+                ),
+                RobotEndpoint(
+                    id = 2L,
+                    name = "WeCom Main",
+                    type = RobotType.WECOM,
+                    enabled = true,
+                    webhookUrl = "https://example.com/wecom",
+                )
+            ),
+        )
+
+        assertTrue(result is SmsProcessingResult.PendingForward)
+        result as SmsProcessingResult.PendingForward
+        assertEquals(listOf(2L), result.attempts.map(ForwardPlan::robotId))
+    }
+
+    @Test
+    fun keywordHitRule_isSelectedEvenWhenHigherPrioritySenderRuleMissesKeyword() {
+        val result = useCase.process(
+            senderNumber = "13608083211",
+            messageBody = "test verification code is 889900",
+            rules = listOf(
+                SenderRule(
+                    id = 1L,
+                    senderNumber = "13608083211",
+                    senderMatchMode = SenderMatchMode.DISPLAY_VALUE,
+                    enabled = true,
+                    keywords = listOf("otp"),
+                    selectedRobotIds = listOf(1L),
+                ),
+                SenderRule(
+                    id = 2L,
+                    senderNumber = "+8613608083211",
+                    senderMatchMode = SenderMatchMode.INTERNATIONAL_NUMBER,
+                    enabled = true,
+                    keywords = listOf("code"),
+                    selectedRobotIds = listOf(2L),
+                )
+            ),
+            robots = listOf(
+                RobotEndpoint(
+                    id = 1L,
+                    name = "Feishu Main",
+                    type = RobotType.FEISHU,
+                    enabled = true,
+                    webhookUrl = "https://example.com/feishu",
+                ),
+                RobotEndpoint(
+                    id = 2L,
+                    name = "WeCom Main",
+                    type = RobotType.WECOM,
+                    enabled = true,
+                    webhookUrl = "https://example.com/wecom",
+                )
+            ),
+        )
+
+        assertTrue(result is SmsProcessingResult.PendingForward)
+        result as SmsProcessingResult.PendingForward
+        assertEquals("code", result.record.matchedKeyword)
+        assertEquals(listOf(2L), result.attempts.map(ForwardPlan::robotId))
     }
 
 }

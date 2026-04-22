@@ -2,6 +2,7 @@ package com.example.mysmscode.data
 
 import com.example.mysmscode.domain.RobotEndpoint
 import com.example.mysmscode.domain.RobotType
+import com.example.mysmscode.domain.SenderMatchMode
 import com.example.mysmscode.domain.SenderRule
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -56,6 +57,46 @@ class EditableRepositoriesTest {
         repository.deleteById(1L)
 
         assertNull(repository.findById(1L))
+    }
+
+    @Test
+    fun senderRule_updateRejectsLogicalSenderConflict() {
+        val repository = InMemorySenderRuleRepository()
+        repository.save(
+            SenderRule(
+                id = 1L,
+                senderNumber = "13608083211",
+                senderMatchMode = SenderMatchMode.DISPLAY_VALUE,
+                enabled = true,
+                keywords = listOf("code"),
+                selectedRobotIds = listOf(1L),
+            )
+        )
+        repository.save(
+            SenderRule(
+                id = 2L,
+                senderNumber = "+8613608083212",
+                senderMatchMode = SenderMatchMode.INTERNATIONAL_NUMBER,
+                enabled = true,
+                keywords = listOf("otp"),
+                selectedRobotIds = listOf(2L),
+            )
+        )
+
+        val result = repository.update(
+            SenderRule(
+                id = 2L,
+                senderNumber = "+8613608083211",
+                senderMatchMode = SenderMatchMode.INTERNATIONAL_NUMBER,
+                enabled = true,
+                keywords = listOf("otp"),
+                selectedRobotIds = listOf(2L),
+            )
+        )
+
+        assertTrue(result is RepositorySaveResult.ConflictingSenderRule)
+        result as RepositorySaveResult.ConflictingSenderRule
+        assertEquals("13608083211", result.existingSenderNumber)
     }
 
     @Test

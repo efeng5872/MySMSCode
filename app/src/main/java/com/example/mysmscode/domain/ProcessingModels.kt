@@ -5,6 +5,11 @@ enum class RobotType {
     WECOM,
 }
 
+enum class RobotWebhookStatus {
+    READY,
+    REENTRY_REQUIRED,
+}
+
 enum class SenderMatchMode {
     DISPLAY_VALUE,
     INTERNATIONAL_NUMBER,
@@ -17,9 +22,14 @@ data class RobotEndpoint(
     val type: RobotType,
     val enabled: Boolean,
     val webhookUrl: String,
+    val webhookStatus: RobotWebhookStatus = RobotWebhookStatus.READY,
     val createdAt: Long = 0L,
     val updatedAt: Long = 0L,
 )
+
+fun RobotEndpoint.requiresWebhookReentry(): Boolean = webhookStatus == RobotWebhookStatus.REENTRY_REQUIRED
+
+fun RobotEndpoint.canDispatch(): Boolean = enabled && !requiresWebhookReentry() && webhookUrl.isNotBlank()
 
 data class SenderRule(
     val id: Long = 0L,

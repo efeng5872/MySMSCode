@@ -44,6 +44,7 @@ import com.example.mysmscode.domain.RobotEndpoint
 import com.example.mysmscode.domain.RobotType
 import com.example.mysmscode.domain.RuleSenderInputMode
 import com.example.mysmscode.domain.SenderRule
+import com.example.mysmscode.domain.requiresWebhookReentry
 
 @Composable
 fun RobotManagementCard(
@@ -80,14 +81,26 @@ fun RobotManagementCard(
                     ) {
                         Text(robot.name, fontWeight = FontWeight.SemiBold)
                         Text(
-                            text = "${robotTypeLabel(context, robot.type)} | ${shortEnabledStateLabel(context, robot.enabled)}",
+                            text = if (robot.requiresWebhookReentry()) {
+                                "${robotTypeLabel(context, robot.type)} | ${stringResource(R.string.robot_webhook_reentry_badge)}"
+                            } else {
+                                "${robotTypeLabel(context, robot.type)} | ${shortEnabledStateLabel(context, robot.enabled)}"
+                            },
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                         Text(
-                            text = robot.webhookUrl,
+                            text = if (robot.requiresWebhookReentry()) {
+                                stringResource(R.string.robot_webhook_reentry_required)
+                            } else {
+                                robot.webhookUrl
+                            },
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            color = if (robot.requiresWebhookReentry()) {
+                                MaterialTheme.colorScheme.error
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            },
                         )
                     }
                     if (index != robots.lastIndex) {
@@ -175,6 +188,7 @@ fun RobotEditorDialog(
     onRobotEnabledChange: (Boolean) -> Unit,
     robotType: RobotType,
     onRobotTypeChange: (RobotType) -> Unit,
+    webhookWarningMessage: String?,
     disableWarningMessage: String?,
     onDismiss: () -> Unit,
     onSave: () -> Unit,
@@ -200,6 +214,13 @@ fun RobotEditorDialog(
                     label = { Text(stringResource(R.string.robot_webhook_label)) },
                     placeholder = { Text("https://...") },
                 )
+                if (webhookWarningMessage != null) {
+                    Text(
+                        text = webhookWarningMessage,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text(stringResource(R.string.robot_type_label))
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -397,9 +418,17 @@ fun RuleEditorDialog(
                                 Column {
                                     Text(robot.name)
                                     Text(
-                                        text = "${robotTypeLabel(context, robot.type)} - ${shortEnabledStateLabel(context, robot.enabled)}",
+                                        text = if (robot.requiresWebhookReentry()) {
+                                            "${robotTypeLabel(context, robot.type)} - ${stringResource(R.string.robot_webhook_reentry_badge)}"
+                                        } else {
+                                            "${robotTypeLabel(context, robot.type)} - ${shortEnabledStateLabel(context, robot.enabled)}"
+                                        },
                                         style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        color = if (robot.requiresWebhookReentry()) {
+                                            MaterialTheme.colorScheme.error
+                                        } else {
+                                            MaterialTheme.colorScheme.onSurfaceVariant
+                                        },
                                     )
                                 }
                             }

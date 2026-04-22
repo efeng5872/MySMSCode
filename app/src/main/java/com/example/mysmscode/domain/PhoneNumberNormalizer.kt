@@ -50,6 +50,32 @@ class PhoneNumberNormalizer(
         }
     }
 
+    fun matchStrength(
+        configuredSender: String,
+        incomingSender: String,
+        matchMode: SenderMatchMode,
+    ): Int? {
+        return when (matchMode) {
+            SenderMatchMode.DISPLAY_VALUE -> displayMatchStrength(configuredSender, incomingSender)
+            SenderMatchMode.INTERNATIONAL_NUMBER -> internationalMatchStrength(configuredSender, incomingSender)
+            SenderMatchMode.LEGACY_COMPAT -> listOfNotNull(
+                displayMatchStrength(configuredSender, incomingSender),
+                internationalMatchStrength(configuredSender, incomingSender),
+            ).maxOrNull()
+        }
+    }
+
+    fun hasSenderConflict(
+        firstConfiguredSender: String,
+        firstMatchMode: SenderMatchMode,
+        secondConfiguredSender: String,
+        secondMatchMode: SenderMatchMode,
+    ): Boolean {
+        val firstVariants = conflictComparableVariants(firstConfiguredSender, firstMatchMode)
+        val secondVariants = conflictComparableVariants(secondConfiguredSender, secondMatchMode)
+        return firstVariants.isNotEmpty() && firstVariants.any(secondVariants::contains)
+    }
+
     private fun matchesDisplayValue(
         configuredSender: String,
         incomingSender: String,
@@ -70,6 +96,27 @@ class PhoneNumberNormalizer(
             configuredCompact == incomingCompact
     }
 
+    private fun displayMatchStrength(
+        configuredSender: String,
+        incomingSender: String,
+    ): Int? {
+        val configuredDisplay = configuredSender.trim()
+        val incomingDisplay = incomingSender.trim()
+        if (configuredDisplay.isEmpty() || incomingDisplay.isEmpty()) {
+            return null
+        }
+        if (configuredDisplay == incomingDisplay) {
+            return 400
+        }
+
+        val configuredCompact = compact(configuredDisplay)
+        val incomingCompact = compact(incomingDisplay)
+        if (configuredCompact.isNotEmpty() && configuredCompact == incomingCompact) {
+            return 300
+        }
+        return null
+    }
+
     private fun matchesInternationalNumber(
         configuredSender: String,
         incomingSender: String,
@@ -77,6 +124,45 @@ class PhoneNumberNormalizer(
         val configuredVariants = comparableVariants(configuredSender)
         val incomingVariants = comparableVariants(incomingSender)
         return configuredVariants.isNotEmpty() && configuredVariants.any(incomingVariants::contains)
+    }
+
+    private fun internationalMatchStrength(
+        configuredSender: String,
+        incomingSender: String,
+    ): Int? {
+        val configuredTrimmed = configuredSender.trim()
+        val incomingTrimmed = incomingSender.trim()
+        if (configuredTrimmed.isEmpty() || incomingTrimmed.isEmpty()) {
+            return null
+        }
+
+        val configuredCompact = compact(configuredTrimmed)
+        val incomingCompact = compact(incomingTrimmed)
+        val configuredVariants = comparableVariants(configuredTrimmed)
+        val incomingVariants = comparableVariants(incomingTrimmed)
+        if (configuredVariants.isEmpty() || configuredVariants.none(incomingVariants::contains)) {
+            return null
+        }
+
+        val configuredE164 = parseToE164OrNull(configuredCompact)
+        val incomingE164 = parseToE164OrNull(incomingCompact)
+        if (configuredE164 != null && configuredE164 == incomingE164) {
+            return 400
+        }
+        if (configuredTrimmed == incomingTrimmed) {
+            return 350
+        }
+        if (configuredCompact.isNotEmpty() && configuredCompact == incomingCompact) {
+            return 300
+        }
+
+        val configuredNational = nationalSignificantNumber(configuredCompact)
+        val incomingNational = nationalSignificantNumber(incomingCompact)
+        if (configuredNational != null && configuredNational == incomingNational) {
+            return 200
+        }
+
+        return 100
     }
 
     fun comparableVariants(rawNumber: String): Set<String> {
@@ -104,12 +190,41 @@ class PhoneNumberNormalizer(
         return variants
     }
 
+    private fun conflictComparableVariants(
+        rawNumber: String,
+        matchMode: SenderMatchMode,
+    ): Set<String> {
+        val trimmed = rawNumber.trim()
+        if (trimmed.isEmpty()) {
+            return emptySet()
+        }
+
+        return when (matchMode) {
+            SenderMatchMode.DISPLAY_VALUE -> buildSet {
+                add(trimmed)
+                compact(trimmed).takeIf { it.isNotEmpty() }?.let(::add)
+            }
+
+            SenderMatchMode.INTERNATIONAL_NUMBER,
+            SenderMatchMode.LEGACY_COMPAT,
+            -> comparableVariants(trimmed)
+        }
+    }
+
     private fun parseToE164OrNull(compact: String): String? {
         val parsedNumber = parseToNumberOrNull(compact) ?: return null
         if (!phoneNumberUtil.isValidNumber(parsedNumber)) {
             return null
         }
         return phoneNumberUtil.format(parsedNumber, PhoneNumberUtil.PhoneNumberFormat.E164)
+    }
+
+    private fun nationalSignificantNumber(compact: String): String? {
+        val parsedNumber = parseToNumberOrNull(compact) ?: return null
+        if (!phoneNumberUtil.isValidNumber(parsedNumber)) {
+            return null
+        }
+        return phoneNumberUtil.getNationalSignificantNumber(parsedNumber)
     }
 
     private fun parseToNumberOrNull(compact: String) = try {

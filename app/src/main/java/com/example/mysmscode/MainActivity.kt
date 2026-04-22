@@ -99,6 +99,7 @@ import com.example.mysmscode.domain.supportedCountryOptions
 import com.example.mysmscode.domain.formatRetryTimestamp
 import com.example.mysmscode.domain.preloadCountryOptions
 import com.example.mysmscode.domain.receivedAtLabel
+import com.example.mysmscode.domain.requiresWebhookReentry
 import com.example.mysmscode.domain.statusLabel
 import com.example.mysmscode.domain.transformRuleNumberDraft
 import com.example.mysmscode.ui.theme.MySMSCodeTheme
@@ -148,6 +149,7 @@ private fun ConfigurationWorkbench(container: AppContainer) {
     var robotWebhook by rememberSaveable { mutableStateOf("") }
     var robotEnabled by rememberSaveable { mutableStateOf(true) }
     var robotType by rememberSaveable { mutableStateOf(RobotType.FEISHU) }
+    var robotWebhookResetWarningVisible by rememberSaveable { mutableStateOf(false) }
 
     var ruleSenderInputMode by rememberSaveable { mutableStateOf(defaultRuleNumberDraft().inputMode.name) }
     var senderNumber by rememberSaveable { mutableStateOf("") }
@@ -330,6 +332,7 @@ private fun ConfigurationWorkbench(container: AppContainer) {
         robotWebhook = ""
         robotEnabled = true
         robotType = RobotType.FEISHU
+        robotWebhookResetWarningVisible = false
         showRobotDialog = false
     }
 
@@ -342,9 +345,10 @@ private fun ConfigurationWorkbench(container: AppContainer) {
         editingRobotId = robot.id
         editingRobotCreatedAt = robot.createdAt
         robotName = robot.name
-        robotWebhook = robot.webhookUrl
+        robotWebhook = if (robot.requiresWebhookReentry()) "" else robot.webhookUrl
         robotEnabled = robot.enabled
         robotType = robot.type
+        robotWebhookResetWarningVisible = robot.requiresWebhookReentry()
         showRobotDialog = true
     }
 
@@ -682,11 +686,21 @@ private fun ConfigurationWorkbench(container: AppContainer) {
                             robotName = robotName,
                             onRobotNameChange = { robotName = it },
                             robotWebhook = robotWebhook,
-                            onRobotWebhookChange = { robotWebhook = it },
+                            onRobotWebhookChange = {
+                                robotWebhook = it
+                                if (it.isNotBlank()) {
+                                    robotWebhookResetWarningVisible = false
+                                }
+                            },
                             robotEnabled = robotEnabled,
                             onRobotEnabledChange = { robotEnabled = it },
                             robotType = robotType,
                             onRobotTypeChange = { robotType = it },
+                            webhookWarningMessage = if (robotWebhookResetWarningVisible) {
+                                context.getString(R.string.robot_webhook_reentry_dialog_message)
+                            } else {
+                                null
+                            },
                             disableWarningMessage = if (editingRobotId != null && !robotEnabled && referencedRuleCount > 0) {
                                 context.getString(R.string.robot_disable_in_use_warning, referencedRuleCount)
                             } else {
@@ -824,6 +838,12 @@ private fun ConfigurationWorkbench(container: AppContainer) {
                                         }
                                         RepositorySaveResult.DuplicateSenderNumber -> {
                                             statusMessage = context.getString(R.string.status_rule_duplicate)
+                                        }
+                                        is RepositorySaveResult.ConflictingSenderRule -> {
+                                            statusMessage = context.getString(
+                                                R.string.status_rule_conflict,
+                                                result.existingSenderNumber,
+                                            )
                                         }
                                         RepositorySaveResult.Failed -> {
                                             statusMessage = context.getString(R.string.status_rule_save_failed)
@@ -1560,7 +1580,15 @@ private fun ConfigurationSummaryCard(
                 Text(stringResource(R.string.configuration_summary_no_robots))
             } else {
                 robots.forEach { robot ->
-                    Text("- ${robot.name} (${robotTypeLabel(context, robot.type)}) - ${shortEnabledStateLabel(context, robot.enabled)}")
+                    Text(
+                        "- ${robot.name} (${robotTypeLabel(context, robot.type)}) - ${
+                            if (robot.requiresWebhookReentry()) {
+                                stringResource(R.string.robot_webhook_reentry_badge)
+                            } else {
+                                shortEnabledStateLabel(context, robot.enabled)
+                            }
+                        }"
+                    )
                 }
             }
             HorizontalDivider()

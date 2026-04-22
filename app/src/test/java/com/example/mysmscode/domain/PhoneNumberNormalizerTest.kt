@@ -91,6 +91,30 @@ class PhoneNumberNormalizerTest {
         assertFalse(matched)
     }
 
+    @Test
+    fun hasSenderConflict_returnsTrueForEquivalentDisplayAndInternationalRules() {
+        val conflicted = normalizer.hasSenderConflict(
+            firstConfiguredSender = "13608083211",
+            firstMatchMode = SenderMatchMode.DISPLAY_VALUE,
+            secondConfiguredSender = "+8613608083211",
+            secondMatchMode = SenderMatchMode.INTERNATIONAL_NUMBER,
+        )
+
+        assertTrue(conflicted)
+    }
+
+    @Test
+    fun hasSenderConflict_returnsFalseForDifferentNumbers() {
+        val conflicted = normalizer.hasSenderConflict(
+            firstConfiguredSender = "13608083211",
+            firstMatchMode = SenderMatchMode.DISPLAY_VALUE,
+            secondConfiguredSender = "+8613608083212",
+            secondMatchMode = SenderMatchMode.INTERNATIONAL_NUMBER,
+        )
+
+        assertFalse(conflicted)
+    }
+
 
     @Test
     fun splitSenderNumberForEditing_returnsDisplayModeForShortCode() {

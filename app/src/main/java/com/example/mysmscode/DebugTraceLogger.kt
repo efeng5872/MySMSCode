@@ -6,10 +6,14 @@ object DebugTraceLogger {
     private const val TAG = "MySMSCodeTrace"
 
     fun d(message: String) {
-        Log.d(TAG, message)
+        runCatching {
+            Log.d(TAG, message)
+        }
     }
 
     fun w(message: String) {
-        Log.w(TAG, message)
+        runCatching {
+            Log.w(TAG, message)
+        }
     }
 }

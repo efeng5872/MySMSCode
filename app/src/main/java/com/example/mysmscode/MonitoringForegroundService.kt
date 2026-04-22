@@ -23,6 +23,7 @@ import com.example.mysmscode.domain.SmsSource
 import com.example.mysmscode.domain.MonitoringRecoveryTrigger
 import com.example.mysmscode.domain.buildProcessingTrace
 import com.example.mysmscode.domain.buildRetrySchedulingPlan
+import com.example.mysmscode.domain.canDispatch
 import com.example.mysmscode.domain.shouldProcessIncomingSms
 import com.example.mysmscode.domain.shouldProcessRetryWork
 import com.example.mysmscode.network.WebhookDispatcher
@@ -194,7 +195,7 @@ class MonitoringForegroundService : Service() {
                 receivedAt = initialOutcome.record.receivedAt,
             )
             val dispatchResults = initialOutcome.attempts.mapNotNull { attempt ->
-                robots.firstOrNull { it.id == attempt.robotId && it.enabled }?.let { robot ->
+                robots.firstOrNull { it.id == attempt.robotId && it.canDispatch() }?.let { robot ->
                     webhookDispatcher.dispatch(robot, forwardMessage)
                 }
             }
@@ -237,7 +238,7 @@ class MonitoringForegroundService : Service() {
 
     private suspend fun executeRetry(container: AppContainer, failedAttempt: RetryableAttempt) {
         val retryPolicyConfig = container.settingsRepository.getRetryPolicyConfig()
-        val robot = container.robotRepository.getAll().firstOrNull { it.id == failedAttempt.robotId && it.enabled }
+        val robot = container.robotRepository.getAll().firstOrNull { it.id == failedAttempt.robotId && it.canDispatch() }
         val dispatchResult = if (robot == null) {
             ForwardDispatchResult(
                 robotId = failedAttempt.robotId,
