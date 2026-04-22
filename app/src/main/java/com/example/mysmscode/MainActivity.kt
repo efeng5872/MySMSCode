@@ -45,7 +45,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -75,7 +74,6 @@ import com.example.mysmscode.domain.RetryPolicyConfig
 import com.example.mysmscode.domain.RetryableAttempt
 import com.example.mysmscode.domain.RobotEndpoint
 import com.example.mysmscode.domain.RobotType
-import com.example.mysmscode.domain.RuleSenderInputMode
 import com.example.mysmscode.domain.SenderMatchMode
 import com.example.mysmscode.domain.SenderRule
 import com.example.mysmscode.domain.SimulationInjectionRequest
@@ -91,18 +89,14 @@ import com.example.mysmscode.domain.buildSimulationRuleMismatchMessage
 import com.example.mysmscode.domain.findInjectedSimulationRecord
 import com.example.mysmscode.domain.findMatchingSimulationRule
 import com.example.mysmscode.domain.shouldAutoRequestPermissions
-import com.example.mysmscode.domain.buildRuleSenderNumber
-import com.example.mysmscode.domain.defaultRuleNumberDraft
 import com.example.mysmscode.domain.defaultCountryOption
 import com.example.mysmscode.domain.findCountryOption
-import com.example.mysmscode.domain.splitSenderNumberForEditing
 import com.example.mysmscode.domain.supportedCountryOptions
 import com.example.mysmscode.domain.formatRetryTimestamp
 import com.example.mysmscode.domain.preloadCountryOptions
 import com.example.mysmscode.domain.receivedAtLabel
 import com.example.mysmscode.domain.requiresWebhookReentry
 import com.example.mysmscode.domain.statusLabel
-import com.example.mysmscode.domain.transformRuleNumberDraft
 import com.example.mysmscode.ui.theme.MySMSCodeTheme
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -146,22 +140,11 @@ private fun ConfigurationWorkbench(container: AppContainer) {
     var countryOptionsPreloaded by remember { mutableStateOf(false) }
     val scrollState = rememberScrollState()
 
-    var robotName by rememberSaveable { mutableStateOf("") }
-    var robotWebhook by rememberSaveable { mutableStateOf("") }
-    var robotEnabled by rememberSaveable { mutableStateOf(true) }
-    var robotType by rememberSaveable { mutableStateOf(RobotType.FEISHU) }
-    var robotWebhookResetWarningVisible by rememberSaveable { mutableStateOf(false) }
-
-    var ruleSenderInputMode by rememberSaveable { mutableStateOf(defaultRuleNumberDraft().inputMode.name) }
-    var senderNumber by rememberSaveable { mutableStateOf("") }
-    var rawSenderDisplay by rememberSaveable { mutableStateOf("") }
-    var selectedCountryRegion by rememberSaveable { mutableStateOf(defaultCountryOption().regionCode) }
+    val robotEditorState = rememberRobotEditorState()
+    val ruleEditorState = rememberRuleEditorState()
     var simulationSenderNumber by rememberSaveable { mutableStateOf("10654321") }
     var simulationMessageBody by rememberSaveable { mutableStateOf("test verification code is 223344") }
     var simulationStatusMessage by rememberSaveable { mutableStateOf("") }
-    var keywordText by rememberSaveable { mutableStateOf("") }
-    var ruleEnabled by rememberSaveable { mutableStateOf(true) }
-    val selectedRobotIds = remember { mutableStateListOf<Long>() }
 
     var firstRetryDelayText by rememberSaveable { mutableStateOf("10") }
     var secondRetryDelayText by rememberSaveable { mutableStateOf("30") }
@@ -173,16 +156,6 @@ private fun ConfigurationWorkbench(container: AppContainer) {
     var retryPolicySectionOffset by remember { mutableStateOf(0) }
     var simulationSectionOffset by remember { mutableStateOf(0) }
 
-    var editingRobotId by rememberSaveable { mutableStateOf<Long?>(null) }
-    var editingRobotCreatedAt by rememberSaveable { mutableStateOf(0L) }
-    var showRobotDialog by rememberSaveable { mutableStateOf(false) }
-    var pendingDeleteRobotId by rememberSaveable { mutableStateOf<Long?>(null) }
-    var blockedRobotName by rememberSaveable { mutableStateOf<String?>(null) }
-
-    var editingRuleId by rememberSaveable { mutableStateOf<Long?>(null) }
-    var editingRuleCreatedAt by rememberSaveable { mutableStateOf(0L) }
-    var showRuleDialog by rememberSaveable { mutableStateOf(false) }
-    var pendingDeleteRuleId by rememberSaveable { mutableStateOf<Long?>(null) }
     var showHonorKeepaliveGuide by rememberSaveable { mutableStateOf(false) }
     var keepaliveDialogMessage by rememberSaveable { mutableStateOf<String?>(null) }
 
@@ -326,66 +299,6 @@ private fun ConfigurationWorkbench(container: AppContainer) {
         }
     }
 
-    fun resetRobotEditor() {
-        editingRobotId = null
-        editingRobotCreatedAt = 0L
-        robotName = ""
-        robotWebhook = ""
-        robotEnabled = true
-        robotType = RobotType.FEISHU
-        robotWebhookResetWarningVisible = false
-        showRobotDialog = false
-    }
-
-    fun openRobotCreateDialog() {
-        resetRobotEditor()
-        showRobotDialog = true
-    }
-
-    fun openRobotEditDialog(robot: RobotEndpoint) {
-        editingRobotId = robot.id
-        editingRobotCreatedAt = robot.createdAt
-        robotName = robot.name
-        robotWebhook = if (robot.requiresWebhookReentry()) "" else robot.webhookUrl
-        robotEnabled = robot.enabled
-        robotType = robot.type
-        robotWebhookResetWarningVisible = robot.requiresWebhookReentry()
-        showRobotDialog = true
-    }
-
-    fun resetRuleEditor() {
-        val defaultDraft = defaultRuleNumberDraft()
-        editingRuleId = null
-        editingRuleCreatedAt = 0L
-        ruleSenderInputMode = defaultDraft.inputMode.name
-        senderNumber = defaultDraft.localNumber
-        rawSenderDisplay = defaultDraft.displaySender
-        selectedCountryRegion = defaultDraft.countryOption.regionCode
-        keywordText = ""
-        ruleEnabled = true
-        selectedRobotIds.clear()
-        showRuleDialog = false
-    }
-
-    fun openRuleCreateDialog() {
-        resetRuleEditor()
-        showRuleDialog = true
-    }
-
-    fun openRuleEditDialog(rule: SenderRule) {
-        val numberDraft = splitSenderNumberForEditing(rule.senderNumber, rule.senderMatchMode)
-        editingRuleId = rule.id
-        editingRuleCreatedAt = rule.createdAt
-        ruleSenderInputMode = numberDraft.inputMode.name
-        selectedCountryRegion = numberDraft.countryOption.regionCode
-        senderNumber = numberDraft.localNumber
-        rawSenderDisplay = numberDraft.displaySender
-        keywordText = rule.keywords.joinToString()
-        ruleEnabled = rule.enabled
-        selectedRobotIds.clear()
-        selectedRobotIds.addAll(rule.selectedRobotIds)
-        showRuleDialog = true
-    }
     LaunchedEffect(Unit) {
         refreshRuntimeState()
     }
@@ -412,8 +325,10 @@ private fun ConfigurationWorkbench(container: AppContainer) {
     }
 
     val availableCountryOptions = remember { supportedCountryOptions() }
-    val selectedCountryOption = remember(selectedCountryRegion) { findCountryOption(selectedCountryRegion) }
-    val selectedRuleSenderInputMode = remember(ruleSenderInputMode) { RuleSenderInputMode.valueOf(ruleSenderInputMode) }
+    val selectedCountryOption = remember(ruleEditorState.selectedCountryRegion) {
+        findCountryOption(ruleEditorState.selectedCountryRegion)
+    }
+    val selectedRuleSenderInputMode = ruleEditorState.selectedInputMode
 
     val permissionUiState = remember(context, permissionSnapshot) {
         buildPermissionUiState(context, permissionSnapshot)
@@ -617,13 +532,13 @@ private fun ConfigurationWorkbench(container: AppContainer) {
                     RuleManagementCard(
                         rules = rules,
                         robots = robots,
-                        onAdd = { openRuleCreateDialog() },
-                        onEdit = { rule -> openRuleEditDialog(rule) },
+                        onAdd = { ruleEditorState.openCreate() },
+                        onEdit = { rule -> ruleEditorState.openEdit(rule) },
                     )
                     RobotManagementCard(
                         robots = robots,
-                        onAdd = { openRobotCreateDialog() },
-                        onEdit = { robot -> openRobotEditDialog(robot) },
+                        onAdd = { robotEditorState.openCreate() },
+                        onEdit = { robot -> robotEditorState.openEdit(robot) },
                     )
                     ConfigSectionLabel(title = stringResource(R.string.config_section_advanced))
                     CollapsibleSectionCard(
@@ -679,51 +594,38 @@ private fun ConfigurationWorkbench(container: AppContainer) {
                             },
                         )
                     }
-                    if (showRobotDialog) {
-                        val referencedRuleCount = editingRobotId?.let { robotId ->
+                    if (robotEditorState.showRobotDialog) {
+                        val referencedRuleCount = robotEditorState.editingRobotId?.let { robotId ->
                             rules.count { it.selectedRobotIds.contains(robotId) }
                         } ?: 0
                         RobotEditorDialog(
-                            isEditMode = editingRobotId != null,
-                            robotName = robotName,
-                            onRobotNameChange = { robotName = it },
-                            robotWebhook = robotWebhook,
-                            onRobotWebhookChange = {
-                                robotWebhook = it
-                                if (it.isNotBlank()) {
-                                    robotWebhookResetWarningVisible = false
-                                }
-                            },
-                            robotEnabled = robotEnabled,
-                            onRobotEnabledChange = { robotEnabled = it },
-                            robotType = robotType,
-                            onRobotTypeChange = { robotType = it },
-                            webhookWarningMessage = if (robotWebhookResetWarningVisible) {
+                            isEditMode = robotEditorState.editingRobotId != null,
+                            robotName = robotEditorState.robotName,
+                            onRobotNameChange = { robotEditorState.robotName = it },
+                            robotWebhook = robotEditorState.robotWebhook,
+                            onRobotWebhookChange = { robotEditorState.updateWebhook(it) },
+                            robotEnabled = robotEditorState.robotEnabled,
+                            onRobotEnabledChange = { robotEditorState.robotEnabled = it },
+                            robotType = robotEditorState.robotType,
+                            onRobotTypeChange = { robotEditorState.robotType = it },
+                            webhookWarningMessage = if (robotEditorState.robotWebhookResetWarningVisible) {
                                 context.getString(R.string.robot_webhook_reentry_dialog_message)
                             } else {
                                 null
                             },
-                            disableWarningMessage = if (editingRobotId != null && !robotEnabled && referencedRuleCount > 0) {
+                            disableWarningMessage = if (robotEditorState.editingRobotId != null && !robotEditorState.robotEnabled && referencedRuleCount > 0) {
                                 context.getString(R.string.robot_disable_in_use_warning, referencedRuleCount)
                             } else {
                                 null
                             },
-                            onDismiss = { resetRobotEditor() },
+                            onDismiss = { robotEditorState.reset() },
                             onSave = {
                                 scope.launch {
-                                    val isEditMode = editingRobotId != null
+                                    val isEditMode = robotEditorState.editingRobotId != null
                                     val now = System.currentTimeMillis()
                                     val result = withContext(Dispatchers.IO) {
-                                        val robot = RobotEndpoint(
-                                            id = editingRobotId ?: 0L,
-                                            name = robotName.trim(),
-                                            type = robotType,
-                                            enabled = robotEnabled,
-                                            webhookUrl = robotWebhook.trim(),
-                                            createdAt = if (editingRobotId == null) now else editingRobotCreatedAt,
-                                            updatedAt = now,
-                                        )
-                                        if (editingRobotId == null) {
+                                        val robot = robotEditorState.buildRobot(now)
+                                        if (robotEditorState.editingRobotId == null) {
                                             container.robotRepository.save(robot)
                                         } else {
                                             container.robotRepository.update(robot)
@@ -732,7 +634,7 @@ private fun ConfigurationWorkbench(container: AppContainer) {
                                     when (result) {
                                         is RepositorySaveResult.Success -> {
                                             val savedName = result.value.name
-                                            resetRobotEditor()
+                                            robotEditorState.reset()
                                             statusMessage = context.getString(
                                                 if (isEditMode) R.string.status_robot_updated else R.string.status_robot_saved,
                                                 savedName,
@@ -750,80 +652,47 @@ private fun ConfigurationWorkbench(container: AppContainer) {
                                     }
                                 }
                             },
-                            onDelete = editingRobotId?.let {
+                            onDelete = robotEditorState.editingRobotId?.let {
                                 {
                                     val currentRobot = robots.firstOrNull { robot -> robot.id == it }
                                     if (currentRobot != null) {
                                         if (canDeleteRobot(currentRobot.id, rules)) {
-                                            pendingDeleteRobotId = currentRobot.id
+                                            robotEditorState.pendingDeleteRobotId = currentRobot.id
                                         } else {
-                                            blockedRobotName = currentRobot.name
+                                            robotEditorState.blockedRobotName = currentRobot.name
                                         }
                                     }
                                 }
                             },
                         )
                     }
-                    if (showRuleDialog) {
+                    if (ruleEditorState.showRuleDialog) {
                         RuleEditorDialog(
-                            isEditMode = editingRuleId != null,
+                            isEditMode = ruleEditorState.editingRuleId != null,
                             inputMode = selectedRuleSenderInputMode,
-                            onInputModeChange = { targetMode ->
-                                val transformedDraft = transformRuleNumberDraft(
-                                    currentInputMode = selectedRuleSenderInputMode,
-                                    targetInputMode = targetMode,
-                                    currentCountryOption = selectedCountryOption,
-                                    currentLocalNumber = senderNumber,
-                                    currentDisplaySender = rawSenderDisplay,
-                                )
-                                ruleSenderInputMode = transformedDraft.inputMode.name
-                                selectedCountryRegion = transformedDraft.countryOption.regionCode
-                                senderNumber = transformedDraft.localNumber
-                                rawSenderDisplay = transformedDraft.displaySender
-                            },
+                            onInputModeChange = { targetMode -> ruleEditorState.applyInputModeChange(targetMode) },
                             countryOptions = availableCountryOptions,
                             selectedCountry = selectedCountryOption,
-                            onCountrySelected = { selectedCountryRegion = it.regionCode },
-                            localNumber = senderNumber,
-                            onLocalNumberChange = { senderNumber = it },
-                            displaySender = rawSenderDisplay,
-                            onDisplaySenderChange = { rawSenderDisplay = it },
-                            keywordText = keywordText,
-                            onKeywordTextChange = { keywordText = it },
-                            ruleEnabled = ruleEnabled,
-                            onRuleEnabledChange = { ruleEnabled = it },
+                            onCountrySelected = { ruleEditorState.selectedCountryRegion = it.regionCode },
+                            localNumber = ruleEditorState.senderNumber,
+                            onLocalNumberChange = { ruleEditorState.senderNumber = it },
+                            displaySender = ruleEditorState.rawSenderDisplay,
+                            onDisplaySenderChange = { ruleEditorState.rawSenderDisplay = it },
+                            keywordText = ruleEditorState.keywordText,
+                            onKeywordTextChange = { ruleEditorState.keywordText = it },
+                            ruleEnabled = ruleEditorState.ruleEnabled,
+                            onRuleEnabledChange = { ruleEditorState.ruleEnabled = it },
                             robots = robots,
-                            selectedRobotIds = selectedRobotIds,
-                            onToggleRobot = { robotId, checked ->
-                                if (checked) {
-                                    if (!selectedRobotIds.contains(robotId)) {
-                                        selectedRobotIds.add(robotId)
-                                    }
-                                } else {
-                                    selectedRobotIds.remove(robotId)
-                                }
-                            },
-                            onDismiss = { resetRuleEditor() },
+                            selectedRobotIds = ruleEditorState.selectedRobotIds,
+                            onToggleRobot = { robotId, checked -> ruleEditorState.toggleRobot(robotId, checked) },
+                            onDismiss = { ruleEditorState.reset() },
                             onSave = {
                                 scope.launch {
-                                    val isEditMode = editingRuleId != null
+                                    val isEditMode = ruleEditorState.editingRuleId != null
                                     val now = System.currentTimeMillis()
-                                    val keywords = keywordText.split(',').map { it.trim() }.filter { it.isNotEmpty() }
                                     val result = withContext(Dispatchers.IO) {
-                                        val rule = SenderRule(
-                                            id = editingRuleId ?: 0L,
-                                            senderNumber = buildRuleSenderNumber(inputMode = selectedRuleSenderInputMode, countryOption = selectedCountryOption, localNumber = senderNumber, displaySender = rawSenderDisplay),
-                                            senderMatchMode = when (selectedRuleSenderInputMode) {
-                                                RuleSenderInputMode.DISPLAY_VALUE -> SenderMatchMode.DISPLAY_VALUE
-                                                RuleSenderInputMode.INTERNATIONAL_NUMBER -> SenderMatchMode.INTERNATIONAL_NUMBER
-                                            },
-                                            enabled = ruleEnabled,
-                                            keywords = keywords,
-                                            selectedRobotIds = selectedRobotIds.toList(),
-                                            createdAt = if (editingRuleId == null) now else editingRuleCreatedAt,
-                                            updatedAt = now,
-                                        )
-                                        if (editingRuleId == null) {
+                                        val rule = ruleEditorState.buildRule(now)
+                                        if (ruleEditorState.editingRuleId == null) {
                                             container.senderRuleRepository.save(rule)
                                         } else {
                                             container.senderRuleRepository.update(rule)
@@ -832,7 +701,7 @@ private fun ConfigurationWorkbench(container: AppContainer) {
                                     when (result) {
                                         is RepositorySaveResult.Success -> {
                                             val savedSender = result.value.senderNumber
-                                            resetRuleEditor()
+                                            ruleEditorState.reset()
                                             statusMessage = context.getString(
                                                 if (isEditMode) R.string.status_rule_updated else R.string.status_rule_saved,
                                                 savedSender,
@@ -856,10 +725,12 @@ private fun ConfigurationWorkbench(container: AppContainer) {
                                     }
                                 }
                             },
-                            onDelete = editingRuleId?.let { id -> { pendingDeleteRuleId = id } },
+                            onDelete = ruleEditorState.editingRuleId?.let { id ->
+                                { ruleEditorState.pendingDeleteRuleId = id }
+                            },
                         )
                     }
-                    pendingDeleteRobotId?.let { robotId ->
+                    robotEditorState.pendingDeleteRobotId?.let { robotId ->
                         val robotNameToDelete = robots.firstOrNull { robot -> robot.id == robotId }?.name.orEmpty()
                         ConfirmDeleteDialog(
                             title = context.getString(R.string.delete_confirm_title),
@@ -867,15 +738,15 @@ private fun ConfigurationWorkbench(container: AppContainer) {
                             onConfirm = {
                                 scope.launch {
                                     withContext(Dispatchers.IO) { container.robotRepository.deleteById(robotId) }
-                                    pendingDeleteRobotId = null
-                                    resetRobotEditor()
+                                    robotEditorState.pendingDeleteRobotId = null
+                                    robotEditorState.reset()
                                     statusMessage = context.getString(R.string.status_robot_deleted, robotNameToDelete)
                                 }
                             },
-                            onDismiss = { pendingDeleteRobotId = null },
+                            onDismiss = { robotEditorState.pendingDeleteRobotId = null },
                         )
                     }
-                    pendingDeleteRuleId?.let { ruleId ->
+                    ruleEditorState.pendingDeleteRuleId?.let { ruleId ->
                         val senderNumberToDelete = rules.firstOrNull { rule -> rule.id == ruleId }?.senderNumber.orEmpty()
                         ConfirmDeleteDialog(
                             title = context.getString(R.string.delete_confirm_title),
@@ -883,19 +754,19 @@ private fun ConfigurationWorkbench(container: AppContainer) {
                             onConfirm = {
                                 scope.launch {
                                     withContext(Dispatchers.IO) { container.senderRuleRepository.deleteById(ruleId) }
-                                    pendingDeleteRuleId = null
-                                    resetRuleEditor()
+                                    ruleEditorState.pendingDeleteRuleId = null
+                                    ruleEditorState.reset()
                                     statusMessage = context.getString(R.string.status_rule_deleted, senderNumberToDelete)
                                 }
                             },
-                            onDismiss = { pendingDeleteRuleId = null },
+                            onDismiss = { ruleEditorState.pendingDeleteRuleId = null },
                         )
                     }
-                    blockedRobotName?.let {
+                    robotEditorState.blockedRobotName?.let {
                         InfoDialog(
                             title = context.getString(R.string.delete_blocked_title),
                             message = context.getString(R.string.delete_robot_blocked_message),
-                            onDismiss = { blockedRobotName = null },
+                            onDismiss = { robotEditorState.blockedRobotName = null },
                         )
                     }
                     CollapsibleSectionCard(

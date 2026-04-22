@@ -85,3 +85,35 @@
 - 实现了保活优化第 4 阶段第一版：在配置中心新增保活状态诊断卡，展示最近一次监控启动、停止、恢复启动、恢复原因、最近短信记录与下一次自动重试时间。
 - 本轮验证通过：定向单测 `MonitoringRecoveryPolicyTest`、`RetrySchedulingPlanTest` 与 `assembleDebug` 均成功，Kotlin daemon 仍存在权限回退告警但不影响结果。
 
+## 2026-04-22
+- 复核 Claude 关于“单测失效”的 review，重新执行 `testDebugUnitTest`，结果为成功，确认最新代码不存在“9 个单测失败”问题。
+- 复核当前 Android 集成测试覆盖面，确认 `androidTest` 仍只有示例测试，关键 Receiver / Service / 恢复 / Room 加解密链路缺少自动化保护。
+- 形成最小必要集成测试实施方案，下一步将按“测试注入 seam -> Receiver/Service -> 持久化恢复 -> Room/webhook 容错”的顺序落地。
+- 为集成测试新增最小测试注入层：`MySmsCodeApplication.containerOverride`、`AppContainer` 可注入测试数据库/密钥/派发器、`WebhookDispatcher` 抽出 `WebhookDispatching` 接口。
+- 新增 3 组 `androidTest`：
+  - `MonitoringForegroundServiceIntegrationTest`
+  - `MonitoringRecoveryIntegrationTest`
+  - `RoomWebhookIntegrationTest`
+- 本轮验证结果：
+  - `testDebugUnitTest` 成功
+  - `:app:assembleDebug` 成功
+  - `:app:assembleDebugAndroidTest` 成功
+  - 已成功拉起 `Medium_Phone_API_36.1` 模拟器并等待至 `adb devices` 显示 `device`
+  - `:app:connectedDebugAndroidTest` 因模拟器已有旧签名残留导致 `INSTALL_FAILED_UPDATE_INCOMPATIBLE`，当前未能进入真实用例执行
+- 已尝试的清理动作：
+  - `adb uninstall com.example.mysmscode`
+  - `adb uninstall com.example.mysmscode.test`
+  - `adb shell pm list packages`
+  - `adb shell pm list packages -u`
+  - `adb shell pm uninstall --user 0 ...`
+  - 以上均未清掉冲突，判断为当前 AVD 包管理状态异常
+- 后续重新校正模拟器状态后，`RuleConflictUiIntegrationTest` 也已补齐，并通过 `:app:connectedDebugAndroidTest` 全量验证，当前 Android 集成测试为 9/9 绿灯。
+- 为支持 Android UI 集成测试，补充了 `UiTestTags`，并修正了规则新增按钮与机器人新增按钮的测试标识混用问题。
+- 完成第一阶段必要重构：从 `MainActivity.kt` 中抽出 `RuleEditorState` 与 `RobotEditorState` 两个编辑态 state holder，并将规则/机器人编辑弹窗的重置、创建、编辑回填、保存草稿构建逻辑收口。
+- 为上述编辑态重构新增单元测试：
+  - `RuleEditorStateTest`
+  - `RobotEditorStateTest`
+- 本轮重构验证结果：
+  - `testDebugUnitTest` 成功
+  - `:app:connectedDebugAndroidTest` 成功
+
