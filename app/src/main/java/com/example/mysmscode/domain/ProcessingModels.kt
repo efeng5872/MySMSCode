@@ -33,6 +33,7 @@ fun RobotEndpoint.canDispatch(): Boolean = enabled && !requiresWebhookReentry() 
 
 data class SenderRule(
     val id: Long = 0L,
+    val name: String = "",
     val senderNumber: String,
     val senderMatchMode: SenderMatchMode = SenderMatchMode.LEGACY_COMPAT,
     val enabled: Boolean,

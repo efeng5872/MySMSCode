@@ -32,6 +32,7 @@ class RoomMappingsTest {
     fun senderRuleEntity_roundTripsKeywords() {
         val domain = SenderRule(
             id = 3L,
+            name = "银行短信",
             senderNumber = "Bank-01",
             senderMatchMode = SenderMatchMode.DISPLAY_VALUE,
             enabled = true,
@@ -52,6 +53,7 @@ class RoomMappingsTest {
         val aggregate = SenderRuleWithRobots(
             rule = SenderRuleEntity(
                 id = 5L,
+                name = "登录验证码",
                 senderNumber = "10690001",
                 senderMatchMode = SenderMatchMode.DISPLAY_VALUE,
                 enabled = true,
@@ -76,6 +78,7 @@ class RoomMappingsTest {
         val domain = aggregate.toDomain()
 
         assertEquals(listOf(100L, 200L), domain.selectedRobotIds)
+        assertEquals("登录验证码", domain.name)
         assertEquals(listOf("code", "otp"), domain.keywords)
     }
 

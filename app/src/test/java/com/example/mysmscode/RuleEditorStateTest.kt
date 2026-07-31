@@ -18,6 +18,7 @@ class RuleEditorStateTest {
             editingRuleCreatedAt = 20L,
             showRuleDialog = true,
             pendingDeleteRuleId = 11L,
+            ruleName = "验证码规则",
             ruleSenderInputMode = RuleSenderInputMode.INTERNATIONAL_NUMBER.name,
             senderNumber = "13608083211",
             rawSenderDisplay = "10654321",
@@ -33,6 +34,7 @@ class RuleEditorStateTest {
         assertEquals(0L, state.editingRuleCreatedAt)
         assertFalse(state.showRuleDialog)
         assertNull(state.pendingDeleteRuleId)
+        assertEquals("", state.ruleName)
         assertEquals(RuleSenderInputMode.DISPLAY_VALUE.name, state.ruleSenderInputMode)
         assertEquals("", state.senderNumber)
         assertEquals("", state.rawSenderDisplay)
@@ -47,6 +49,7 @@ class RuleEditorStateTest {
         val state = RuleEditorState()
         val rule = SenderRule(
             id = 7L,
+            name = "银行验证码",
             senderNumber = "+8613608083211",
             senderMatchMode = SenderMatchMode.INTERNATIONAL_NUMBER,
             enabled = false,
@@ -61,6 +64,7 @@ class RuleEditorStateTest {
         assertEquals(7L, state.editingRuleId)
         assertEquals(99L, state.editingRuleCreatedAt)
         assertTrue(state.showRuleDialog)
+        assertEquals("银行验证码", state.ruleName)
         assertEquals(RuleSenderInputMode.INTERNATIONAL_NUMBER.name, state.ruleSenderInputMode)
         assertEquals("CN", state.selectedCountryRegion)
         assertEquals("13608083211", state.senderNumber)
@@ -89,6 +93,7 @@ class RuleEditorStateTest {
         val state = RuleEditorState(
             editingRuleId = 5L,
             editingRuleCreatedAt = 42L,
+            ruleName = " 英国验证码 ",
             ruleSenderInputMode = RuleSenderInputMode.INTERNATIONAL_NUMBER.name,
             senderNumber = "07911123456",
             selectedCountryRegion = "GB",
@@ -100,6 +105,7 @@ class RuleEditorStateTest {
         val result = state.buildRule(now = 123L)
 
         assertEquals(5L, result.id)
+        assertEquals("英国验证码", result.name)
         assertEquals("+447911123456", result.senderNumber)
         assertEquals(SenderMatchMode.INTERNATIONAL_NUMBER, result.senderMatchMode)
         assertFalse(result.enabled)

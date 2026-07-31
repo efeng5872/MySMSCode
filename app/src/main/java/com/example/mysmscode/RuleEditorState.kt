@@ -21,6 +21,7 @@ class RuleEditorState(
     editingRuleCreatedAt: Long = 0L,
     showRuleDialog: Boolean = false,
     pendingDeleteRuleId: Long? = null,
+    ruleName: String = "",
     ruleSenderInputMode: String = defaultRuleNumberDraft().inputMode.name,
     senderNumber: String = "",
     rawSenderDisplay: String = "",
@@ -33,6 +34,7 @@ class RuleEditorState(
     var editingRuleCreatedAt by mutableStateOf(editingRuleCreatedAt)
     var showRuleDialog by mutableStateOf(showRuleDialog)
     var pendingDeleteRuleId by mutableStateOf(pendingDeleteRuleId)
+    var ruleName by mutableStateOf(ruleName)
     var ruleSenderInputMode by mutableStateOf(ruleSenderInputMode)
     var senderNumber by mutableStateOf(senderNumber)
     var rawSenderDisplay by mutableStateOf(rawSenderDisplay)
@@ -48,6 +50,7 @@ class RuleEditorState(
         val defaultDraft = defaultRuleNumberDraft()
         editingRuleId = null
         editingRuleCreatedAt = 0L
+        ruleName = ""
         ruleSenderInputMode = defaultDraft.inputMode.name
         senderNumber = defaultDraft.localNumber
         rawSenderDisplay = defaultDraft.displaySender
@@ -68,6 +71,7 @@ class RuleEditorState(
         val numberDraft = splitSenderNumberForEditing(rule.senderNumber, rule.senderMatchMode)
         editingRuleId = rule.id
         editingRuleCreatedAt = rule.createdAt
+        ruleName = rule.name
         ruleSenderInputMode = numberDraft.inputMode.name
         selectedCountryRegion = numberDraft.countryOption.regionCode
         senderNumber = numberDraft.localNumber
@@ -107,6 +111,7 @@ class RuleEditorState(
     fun buildRule(now: Long): SenderRule {
         return SenderRule(
             id = editingRuleId ?: 0L,
+            name = ruleName.trim(),
             senderNumber = buildRuleSenderNumber(
                 inputMode = selectedInputMode,
                 countryOption = findCountryOption(selectedCountryRegion),
@@ -133,6 +138,7 @@ class RuleEditorState(
                     state.editingRuleCreatedAt,
                     state.showRuleDialog,
                     state.pendingDeleteRuleId,
+                    state.ruleName,
                     state.ruleSenderInputMode,
                     state.senderNumber,
                     state.rawSenderDisplay,
@@ -148,13 +154,14 @@ class RuleEditorState(
                     editingRuleCreatedAt = values[1] as Long,
                     showRuleDialog = values[2] as Boolean,
                     pendingDeleteRuleId = values[3] as Long?,
-                    ruleSenderInputMode = values[4] as String,
-                    senderNumber = values[5] as String,
-                    rawSenderDisplay = values[6] as String,
-                    selectedCountryRegion = values[7] as String,
-                    keywordText = values[8] as String,
-                    ruleEnabled = values[9] as Boolean,
-                    selectedRobotIds = (values[10] as List<*>).filterIsInstance<Long>(),
+                    ruleName = values[4] as String,
+                    ruleSenderInputMode = values[5] as String,
+                    senderNumber = values[6] as String,
+                    rawSenderDisplay = values[7] as String,
+                    selectedCountryRegion = values[8] as String,
+                    keywordText = values[9] as String,
+                    ruleEnabled = values[10] as Boolean,
+                    selectedRobotIds = (values[11] as List<*>).filterIsInstance<Long>(),
                 )
             },
         )

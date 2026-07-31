@@ -154,7 +154,20 @@ fun RuleManagementCard(
                             .clickable { onEdit(rule) },
                         verticalArrangement = Arrangement.spacedBy(4.dp),
                     ) {
-                        Text(rule.senderNumber, fontWeight = FontWeight.SemiBold)
+                        Text(
+                            text = rule.name.ifBlank {
+                                stringResource(R.string.configuration_summary_rule_name_fallback)
+                            },
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                        Text(
+                            text = stringResource(
+                                R.string.configuration_summary_sender_line,
+                                rule.senderNumber,
+                            ),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
                         Text(
                             stringResource(
                                 R.string.configuration_summary_keyword_line,
@@ -276,6 +289,8 @@ fun RobotEditorDialog(
 @Composable
 fun RuleEditorDialog(
     isEditMode: Boolean,
+    ruleName: String,
+    onRuleNameChange: (String) -> Unit,
     inputMode: RuleSenderInputMode,
     onInputModeChange: (RuleSenderInputMode) -> Unit,
     countryOptions: List<CountryOption>,
@@ -336,6 +351,16 @@ fun RuleEditorDialog(
                     stringResource(R.string.rule_sender_mode_label),
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.Medium,
+                )
+                OutlinedTextField(
+                    value = ruleName,
+                    onValueChange = onRuleNameChange,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag(UiTestTags.RULE_NAME_INPUT),
+                    label = { Text(stringResource(R.string.rule_name_label)) },
+                    placeholder = { Text(stringResource(R.string.rule_name_placeholder)) },
+                    supportingText = { Text(stringResource(R.string.rule_name_support)) },
                 )
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     RadioButton(

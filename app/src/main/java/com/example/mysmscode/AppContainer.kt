@@ -62,12 +62,23 @@ class AppContainer(
         }
     }
 
+    private val migration6To7 = object : Migration(6, 7) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                """
+                ALTER TABLE sender_rules
+                ADD COLUMN name TEXT NOT NULL DEFAULT ''
+                """.trimIndent()
+            )
+        }
+    }
+
     val database: AppDatabase by lazy {
         databaseOverride ?: Room.databaseBuilder(
             application,
             AppDatabase::class.java,
             "mysmscode.db"
-        ).addMigrations(migration4To5, migration5To6)
+        ).addMigrations(migration4To5, migration5To6, migration6To7)
             .fallbackToDestructiveMigration(false)
             .build()
     }

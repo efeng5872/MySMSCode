@@ -61,6 +61,7 @@ data class RobotEndpointEntity(
 data class SenderRuleEntity(
     @PrimaryKey(autoGenerate = true)
     val id: Long = 0L,
+    val name: String,
     @ColumnInfo(name = "sender_number")
     val senderNumber: String,
     @ColumnInfo(name = "sender_match_mode")
@@ -75,6 +76,7 @@ data class SenderRuleEntity(
 ) {
     fun toDomain(selectedRobotIds: List<Long>): SenderRule = SenderRule(
         id = id,
+        name = name,
         senderNumber = senderNumber,
         senderMatchMode = senderMatchMode,
         enabled = enabled,
@@ -87,6 +89,7 @@ data class SenderRuleEntity(
     companion object {
         fun fromDomain(domain: SenderRule): SenderRuleEntity = SenderRuleEntity(
             id = domain.id,
+            name = domain.name,
             senderNumber = domain.senderNumber,
             senderMatchMode = domain.senderMatchMode,
             enabled = domain.enabled,

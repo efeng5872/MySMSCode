@@ -110,6 +110,9 @@
     <string name="robot_disabled">&#x76EE;&#x6807;&#x673A;&#x5668;&#x4EBA;&#x5DF2;&#x505C;&#x7528;</string>
     <string name="robot_save">&#x4FDD;&#x5B58;&#x76EE;&#x6807;&#x673A;&#x5668;&#x4EBA;</string>
     <string name="rule_form_title">&#x65B0;&#x589E;&#x53F7;&#x7801;&#x89C4;&#x5219;</string>
+    <string name="rule_name_label">规则名称</string>
+    <string name="rule_name_support">便于在配置中心区分用途，例如 招商银行验证码。</string>
+    <string name="rule_name_placeholder">招商银行验证码</string>
     <string name="rule_sender_label">&#x53D1;&#x9001;&#x53F7;&#x7801;</string>
     <string name="rule_sender_mode_label">配置方式</string>
     <string name="rule_sender_mode_display">按显示值配置</string>
@@ -138,6 +141,8 @@
     <string name="configuration_summary_no_robots">&#x8FD8;&#x6CA1;&#x6709;&#x4FDD;&#x5B58;&#x4EFB;&#x4F55;&#x76EE;&#x6807;&#x673A;&#x5668;&#x4EBA;&#x3002;</string>
     <string name="configuration_summary_sender_rules">&#x53F7;&#x7801;&#x89C4;&#x5219;</string>
     <string name="configuration_summary_no_rules">&#x8FD8;&#x6CA1;&#x6709;&#x4FDD;&#x5B58;&#x4EFB;&#x4F55;&#x53F7;&#x7801;&#x89C4;&#x5219;&#x3002;</string>
+    <string name="configuration_summary_rule_name_fallback">未命名规则</string>
+    <string name="configuration_summary_sender_line">发送方：%1$s</string>
     <string name="configuration_summary_keyword_line">&#x5173;&#x952E;&#x5B57;&#xFF1A;%1$s</string>
     <string name="configuration_summary_robot_line">&#x76EE;&#x6807;&#x673A;&#x5668;&#x4EBA;&#xFF1A;%1$s</string>
     <string name="failed_retry_title">&#x5931;&#x8D25;&#x91CD;&#x8BD5;&#x961F;&#x5217;</string>

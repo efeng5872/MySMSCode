@@ -42,6 +42,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -62,6 +63,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.example.mysmscode.data.RepositorySaveResult
 import com.example.mysmscode.domain.AppPermissionSnapshot
 import com.example.mysmscode.domain.ConfigurationRuleSummary
@@ -128,6 +132,7 @@ private fun ConfigurationWorkbench(container: AppContainer) {
     var retryPolicyConfig by remember { mutableStateOf(RetryPolicyConfig.default()) }
     var permissionSnapshot by remember { mutableStateOf(readPermissionSnapshot(context)) }
     var monitoringServiceRunning by remember { mutableStateOf(readMonitoringServiceRunning(context)) }
+    var batteryOptimizationIgnored by remember { mutableStateOf(isIgnoringBatteryOptimizations(context)) }
     var monitoringPersistenceState by remember { mutableStateOf(MonitoringPersistenceState()) }
     var monitoringTransition by remember { mutableStateOf(MonitoringControlTransition.IDLE) }
     var isLoading by remember { mutableStateOf(true) }
@@ -155,6 +160,7 @@ private fun ConfigurationWorkbench(container: AppContainer) {
 
     var showHonorKeepaliveGuide by rememberSaveable { mutableStateOf(false) }
     var keepaliveDialogMessage by rememberSaveable { mutableStateOf<String?>(null) }
+    val lifecycleOwner = LocalLifecycleOwner.current
 
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions(),
@@ -217,6 +223,7 @@ private fun ConfigurationWorkbench(container: AppContainer) {
         monitoringPersistenceState = result.monitoringPersistenceState
         permissionSnapshot = result.permissionSnapshot
         monitoringServiceRunning = result.monitoringServiceRunning
+        batteryOptimizationIgnored = isIgnoringBatteryOptimizations(context)
         statusMessage = result.statusMessage
         isLoading = false
     }
@@ -231,6 +238,18 @@ private fun ConfigurationWorkbench(container: AppContainer) {
 
     LaunchedEffect(Unit) {
         refreshRuntimeState()
+    }
+
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                scope.launch { refreshRuntimeState() }
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
     }
 
     LaunchedEffect(permissionSnapshot, hasAutoRequestedPermissions) {
@@ -363,11 +382,11 @@ private fun ConfigurationWorkbench(container: AppContainer) {
                         KeepaliveGuideCard(
                             monitoringState = monitoringPersistenceState,
                             isServiceRunning = monitoringServiceRunning,
-                            isIgnoringBatteryOptimizations = isIgnoringBatteryOptimizations(context),
+                            isIgnoringBatteryOptimizations = batteryOptimizationIgnored,
                             notificationsReady = permissionSnapshot.postNotificationsGranted,
                             showHeader = false,
                             onOpenBatterySettings = {
-                                if (isIgnoringBatteryOptimizations(context)) {
+                                if (batteryOptimizationIgnored) {
                                     keepaliveDialogMessage = context.getString(R.string.keepalive_battery_already_optimized)
                                     return@KeepaliveGuideCard
                                 }
@@ -566,6 +585,8 @@ private fun ConfigurationWorkbench(container: AppContainer) {
                     if (ruleEditorState.showRuleDialog) {
                         RuleEditorDialog(
                             isEditMode = ruleEditorState.editingRuleId != null,
+                            ruleName = ruleEditorState.ruleName,
+                            onRuleNameChange = { ruleEditorState.ruleName = it },
                             inputMode = selectedRuleSenderInputMode,
                             onInputModeChange = { targetMode -> ruleEditorState.applyInputModeChange(targetMode) },
                             countryOptions = availableCountryOptions,
@@ -597,11 +618,11 @@ private fun ConfigurationWorkbench(container: AppContainer) {
                                     }
                                     when (result) {
                                         is RepositorySaveResult.Success -> {
-                                            val savedSender = result.value.senderNumber
+                                            val savedRuleLabel = result.value.displayName()
                                             ruleEditorState.reset()
                                             statusMessage = context.getString(
                                                 if (isEditMode) R.string.status_rule_updated else R.string.status_rule_saved,
-                                                savedSender,
+                                                savedRuleLabel,
                                             )
                                         }
                                         RepositorySaveResult.DuplicateSenderNumber -> {
@@ -644,16 +665,17 @@ private fun ConfigurationWorkbench(container: AppContainer) {
                         )
                     }
                     ruleEditorState.pendingDeleteRuleId?.let { ruleId ->
-                        val senderNumberToDelete = rules.firstOrNull { rule -> rule.id == ruleId }?.senderNumber.orEmpty()
+                        val ruleToDelete = rules.firstOrNull { rule -> rule.id == ruleId }
+                        val ruleLabelToDelete = ruleToDelete?.displayName().orEmpty()
                         ConfirmDeleteDialog(
                             title = context.getString(R.string.delete_confirm_title),
-                            message = context.getString(R.string.delete_rule_confirm_message, senderNumberToDelete),
+                            message = context.getString(R.string.delete_rule_confirm_message, ruleLabelToDelete),
                             onConfirm = {
                                 scope.launch {
                                     withContext(Dispatchers.IO) { container.senderRuleRepository.deleteById(ruleId) }
                                     ruleEditorState.pendingDeleteRuleId = null
                                     ruleEditorState.reset()
-                                    statusMessage = context.getString(R.string.status_rule_deleted, senderNumberToDelete)
+                                    statusMessage = context.getString(R.string.status_rule_deleted, ruleLabelToDelete)
                                 }
                             },
                             onDismiss = { ruleEditorState.pendingDeleteRuleId = null },
@@ -1553,6 +1575,8 @@ private fun monitoringRecoveryTriggerLabel(trigger: String): String = when (trig
     MonitoringRecoveryTrigger.SERVICE_RECOVERY.name -> "服务异常恢复"
     else -> trigger
 }
+
+private fun SenderRule.displayName(): String = name.ifBlank { senderNumber }
 
 
 
