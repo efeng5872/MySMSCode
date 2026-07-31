@@ -417,7 +417,7 @@ class MonitoringForegroundService : Service() {
         private const val NOTIFICATION_ID = 1001
         private const val STOPPED_NOTIFICATION_ID = 1002
         private const val STOPPED_NOTIFICATION_TIMEOUT_MS = 5_000L
-        private const val HEARTBEAT_INTERVAL_MS = 5 * 60 * 1_000L
+        private const val HEARTBEAT_INTERVAL_MS = 15 * 60 * 1_000L
         private const val LIFECYCLE_EVENT_WRITE_TIMEOUT_MS = 1_000L
         private const val ACTION_START_MONITORING = "com.example.mysmscode.action.START_MONITORING"
         private const val ACTION_STOP_MONITORING = "com.example.mysmscode.action.STOP_MONITORING"
