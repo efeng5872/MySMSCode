@@ -1,6 +1,8 @@
 package com.example.mysmscode.data
 
 import com.example.mysmscode.domain.RetryPolicyConfig
+import com.example.mysmscode.domain.MonitoringPersistenceState
+import com.example.mysmscode.domain.MonitoringRuntimeEvent
 import com.example.mysmscode.domain.RobotEndpoint
 import com.example.mysmscode.domain.RobotType
 import com.example.mysmscode.domain.SenderMatchMode
@@ -92,6 +94,25 @@ class RoomMappingsTest {
 
         val entity = RetryPolicyConfigEntity.fromDomain(domain)
         val restored = entity.toDomain()
+
+        assertEquals(domain, restored)
+    }
+
+    @Test
+    fun monitoringStateEntity_roundTripsRuntimeDiagnostics() {
+        val domain = MonitoringPersistenceState(
+            monitoringEnabled = true,
+            stoppedByUser = false,
+            lastMonitoringStartedAt = 100L,
+            lastMonitoringStoppedAt = 50L,
+            lastRecoveryStartedAt = 90L,
+            lastRecoveryTrigger = "SERVICE_RECOVERY",
+            lastServiceHeartbeatAt = 110L,
+            lastRuntimeEventAt = 105L,
+            lastRuntimeEvent = MonitoringRuntimeEvent.RECOVERED.name,
+        )
+
+        val restored = MonitoringStateEntity.fromDomain(domain).toDomain()
 
         assertEquals(domain, restored)
     }

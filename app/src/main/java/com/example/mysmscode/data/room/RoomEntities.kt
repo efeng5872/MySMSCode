@@ -142,6 +142,12 @@ data class MonitoringStateEntity(
     val lastRecoveryStartedAt: Long?,
     @ColumnInfo(name = "last_recovery_trigger")
     val lastRecoveryTrigger: String?,
+    @ColumnInfo(name = "last_service_heartbeat_at")
+    val lastServiceHeartbeatAt: Long? = null,
+    @ColumnInfo(name = "last_runtime_event_at")
+    val lastRuntimeEventAt: Long? = null,
+    @ColumnInfo(name = "last_runtime_event")
+    val lastRuntimeEvent: String? = null,
 ) {
     fun toDomain(): MonitoringPersistenceState = MonitoringPersistenceState(
         monitoringEnabled = monitoringEnabled,
@@ -150,6 +156,9 @@ data class MonitoringStateEntity(
         lastMonitoringStoppedAt = lastMonitoringStoppedAt,
         lastRecoveryStartedAt = lastRecoveryStartedAt,
         lastRecoveryTrigger = lastRecoveryTrigger,
+        lastServiceHeartbeatAt = lastServiceHeartbeatAt,
+        lastRuntimeEventAt = lastRuntimeEventAt,
+        lastRuntimeEvent = lastRuntimeEvent,
     )
 
     companion object {
@@ -160,6 +169,9 @@ data class MonitoringStateEntity(
             lastMonitoringStoppedAt = domain.lastMonitoringStoppedAt,
             lastRecoveryStartedAt = domain.lastRecoveryStartedAt,
             lastRecoveryTrigger = domain.lastRecoveryTrigger,
+            lastServiceHeartbeatAt = domain.lastServiceHeartbeatAt,
+            lastRuntimeEventAt = domain.lastRuntimeEventAt,
+            lastRuntimeEvent = domain.lastRuntimeEvent,
         )
     }
 }

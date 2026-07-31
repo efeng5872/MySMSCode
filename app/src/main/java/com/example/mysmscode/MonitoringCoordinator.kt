@@ -4,9 +4,12 @@ import android.Manifest
 import com.example.mysmscode.domain.AppPermissionSnapshot
 import com.example.mysmscode.domain.MonitoringControlTransition
 import com.example.mysmscode.domain.MonitoringPersistenceState
+import com.example.mysmscode.domain.MonitoringRecoveryTrigger
+import com.example.mysmscode.domain.MonitoringRuntimeEvent
 import com.example.mysmscode.domain.PermissionUiState
 import com.example.mysmscode.domain.RetryPolicyConfig
 import com.example.mysmscode.domain.resolveMonitoringStatusMessage
+import com.example.mysmscode.domain.markRuntimeEvent
 import kotlinx.coroutines.delay
 
 data class MonitoringRefreshResult(
@@ -49,8 +52,9 @@ class MonitoringCoordinator(
     private val readMonitoringState: suspend () -> MonitoringPersistenceState,
     private val readPermissionSnapshot: () -> AppPermissionSnapshot,
     private val readServiceRunning: () -> Boolean,
-    private val startMonitoring: () -> Unit,
+    private val startMonitoring: (MonitoringRecoveryTrigger?) -> Unit,
     private val stopMonitoring: () -> Unit,
+    private val saveMonitoringState: suspend (MonitoringPersistenceState) -> Unit,
     private val nowProvider: () -> Long = System::currentTimeMillis,
     private val delayMillis: suspend (Long) -> Unit = { delay(it) },
 ) {
@@ -60,9 +64,32 @@ class MonitoringCoordinator(
         startedMessage: String,
     ): MonitoringRefreshResult {
         val retryPolicyConfig = readRetryPolicyConfig()
-        val monitoringPersistenceState = readMonitoringState()
-        val monitoringServiceRunning = readServiceRunning()
+        var monitoringPersistenceState = readMonitoringState()
+        var monitoringServiceRunning = readServiceRunning()
         val permissionSnapshot = readPermissionSnapshot()
+        if (
+            monitoringPersistenceState.monitoringEnabled &&
+            !monitoringPersistenceState.stoppedByUser &&
+            !monitoringServiceRunning &&
+            permissionSnapshot.canStartMonitoring
+        ) {
+            monitoringPersistenceState = monitoringPersistenceState.markRuntimeEvent(
+                event = MonitoringRuntimeEvent.INTERRUPTION_DETECTED,
+                now = nowProvider(),
+            )
+            saveMonitoringState(monitoringPersistenceState)
+            val recoveryStarted = runCatching {
+                startMonitoring(MonitoringRecoveryTrigger.APP_RESUME)
+            }.isSuccess
+            if (recoveryStarted) {
+                val recovery = syncMonitoringState(
+                    expectedRunning = true,
+                    currentState = monitoringPersistenceState,
+                )
+                monitoringPersistenceState = recovery.monitoringPersistenceState
+                monitoringServiceRunning = recovery.monitoringServiceRunning
+            }
+        }
         val statusMessage = reconcilePassiveMonitoringStatusMessage(
             currentMessage = currentMessage,
             isServiceRunning = monitoringServiceRunning,
@@ -167,7 +194,7 @@ class MonitoringCoordinator(
             else -> {
                 val requestedAt = nowProvider()
                 onProgress(MonitoringControlTransition.STARTING, messages.startRequestedMessage)
-                startMonitoring()
+                startMonitoring(null)
                 val syncResult = syncMonitoringState(
                     expectedRunning = true,
                     currentState = input.monitoringPersistenceState,

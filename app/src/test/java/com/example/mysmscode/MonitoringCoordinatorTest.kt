@@ -4,6 +4,8 @@ import android.Manifest
 import com.example.mysmscode.domain.AppPermissionSnapshot
 import com.example.mysmscode.domain.MonitoringControlTransition
 import com.example.mysmscode.domain.MonitoringPersistenceState
+import com.example.mysmscode.domain.MonitoringRecoveryTrigger
+import com.example.mysmscode.domain.MonitoringRuntimeEvent
 import com.example.mysmscode.domain.PermissionUiState
 import com.example.mysmscode.domain.RetryPolicyConfig
 import kotlinx.coroutines.runBlocking
@@ -63,6 +65,60 @@ class MonitoringCoordinatorTest {
         assertTrue(result.monitoringServiceRunning)
         assertTrue(result.monitoringPersistenceState.monitoringEnabled)
         assertEquals("监控服务已启动", result.statusMessage)
+    }
+
+    @Test
+    fun `refresh runtime state recovers an unexpectedly stopped active service`() = runBlocking {
+        val recoveryTriggers = mutableListOf<MonitoringRecoveryTrigger?>()
+        val savedStates = mutableListOf<MonitoringPersistenceState>()
+        val coordinator = createCoordinator(
+            monitoringStates = mutableListOf(
+                MonitoringPersistenceState(monitoringEnabled = true, stoppedByUser = false),
+                MonitoringPersistenceState(
+                    monitoringEnabled = true,
+                    stoppedByUser = false,
+                    lastRecoveryTrigger = MonitoringRecoveryTrigger.APP_RESUME.name,
+                ),
+            ),
+            serviceRunningValues = mutableListOf(false, true),
+            onStartMonitoring = { trigger -> recoveryTriggers += trigger },
+            onSaveMonitoringState = { state -> savedStates += state },
+        )
+
+        val result = coordinator.refreshRuntimeState(
+            currentMessage = "",
+            transition = MonitoringControlTransition.IDLE,
+            startedMessage = "监控服务已启动",
+        )
+
+        assertEquals(listOf(MonitoringRecoveryTrigger.APP_RESUME), recoveryTriggers)
+        assertEquals(MonitoringRuntimeEvent.INTERRUPTION_DETECTED.name, savedStates.single().lastRuntimeEvent)
+        assertTrue(result.monitoringServiceRunning)
+        assertEquals(MonitoringRecoveryTrigger.APP_RESUME.name, result.monitoringPersistenceState.lastRecoveryTrigger)
+    }
+
+    @Test
+    fun `refresh runtime state keeps interruption evidence when recovery launch fails`() = runBlocking {
+        val savedStates = mutableListOf<MonitoringPersistenceState>()
+        val coordinator = createCoordinator(
+            monitoringStates = mutableListOf(
+                MonitoringPersistenceState(monitoringEnabled = true, stoppedByUser = false),
+            ),
+            serviceRunningValues = mutableListOf(false),
+            onStartMonitoring = { throw IllegalStateException("background start denied") },
+            onSaveMonitoringState = { state -> savedStates += state },
+        )
+
+        val result = coordinator.refreshRuntimeState(
+            currentMessage = "",
+            transition = MonitoringControlTransition.IDLE,
+            startedMessage = "监控服务已启动",
+        )
+
+        assertFalse(result.monitoringServiceRunning)
+        assertEquals(MonitoringRuntimeEvent.INTERRUPTION_DETECTED.name, result.monitoringPersistenceState.lastRuntimeEvent)
+        assertEquals(1_000L, result.monitoringPersistenceState.lastRuntimeEventAt)
+        assertEquals(result.monitoringPersistenceState, savedStates.single())
     }
 
     @Test
@@ -176,8 +232,9 @@ class MonitoringCoordinatorTest {
             notificationPermissionRequired = true,
         ),
         serviceRunningValues: MutableList<Boolean> = mutableListOf(false),
-        onStartMonitoring: () -> Unit = {},
+        onStartMonitoring: (MonitoringRecoveryTrigger?) -> Unit = {},
         onStopMonitoring: () -> Unit = {},
+        onSaveMonitoringState: suspend (MonitoringPersistenceState) -> Unit = {},
     ): MonitoringCoordinator {
         return MonitoringCoordinator(
             readRetryPolicyConfig = { retryPolicyConfig },
@@ -186,6 +243,7 @@ class MonitoringCoordinatorTest {
             readServiceRunning = { nextValue(serviceRunningValues) },
             startMonitoring = onStartMonitoring,
             stopMonitoring = onStopMonitoring,
+            saveMonitoringState = onSaveMonitoringState,
             nowProvider = { 1_000L },
             delayMillis = {},
         )

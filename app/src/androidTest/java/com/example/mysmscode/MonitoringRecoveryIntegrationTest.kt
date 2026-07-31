@@ -3,6 +3,7 @@ package com.example.mysmscode
 import android.content.Intent
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import androidx.core.content.ContextCompat
 import com.example.mysmscode.domain.MonitoringPersistenceState
 import com.example.mysmscode.domain.MonitoringRecoveryTrigger
 import kotlinx.coroutines.runBlocking
@@ -103,5 +104,30 @@ class MonitoringRecoveryIntegrationTest {
         assertFalse(finalState.monitoringEnabled)
         assertTrue(finalState.stoppedByUser)
         assertNull(finalState.lastRecoveryTrigger)
+    }
+
+    @Test
+    fun stickyServiceRestart_recordsServiceRecovery() {
+        runBlocking {
+            harness.container.settingsRepository.saveMonitoringState(
+                MonitoringPersistenceState(
+                    monitoringEnabled = true,
+                    stoppedByUser = false,
+                    lastMonitoringStartedAt = 100L,
+                )
+            )
+        }
+
+        ContextCompat.startForegroundService(
+            harness.appContext,
+            Intent(harness.appContext, MonitoringForegroundService::class.java),
+        )
+
+        waitUntil("粘性重建应记录 SERVICE_RECOVERY 和心跳") {
+            val state = runBlocking { harness.container.settingsRepository.getMonitoringState() }
+            state.lastRecoveryTrigger == MonitoringRecoveryTrigger.SERVICE_RECOVERY.name &&
+                state.lastRecoveryStartedAt != null &&
+                state.lastServiceHeartbeatAt != null
+        }
     }
 }

@@ -15,12 +15,16 @@ import com.example.mysmscode.domain.ForwardDispatchResult
 import com.example.mysmscode.domain.ForwardMessage
 import com.example.mysmscode.domain.markMonitoringStarted
 import com.example.mysmscode.domain.markMonitoringStoppedByUser
+import com.example.mysmscode.domain.isMonitoringActive
+import com.example.mysmscode.domain.markRuntimeEvent
+import com.example.mysmscode.domain.markServiceHeartbeat
 import com.example.mysmscode.domain.ProcessIncomingSmsUseCase
 import com.example.mysmscode.domain.RetrySchedulingPlan
 import com.example.mysmscode.domain.RetryFailedAttemptUseCase
 import com.example.mysmscode.domain.RetryableAttempt
 import com.example.mysmscode.domain.SmsSource
 import com.example.mysmscode.domain.MonitoringRecoveryTrigger
+import com.example.mysmscode.domain.MonitoringRuntimeEvent
 import com.example.mysmscode.domain.buildProcessingTrace
 import com.example.mysmscode.domain.buildRetrySchedulingPlan
 import com.example.mysmscode.domain.canDispatch
@@ -30,10 +34,13 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withTimeout
 
 class MonitoringForegroundService : Service() {
 
@@ -43,17 +50,40 @@ class MonitoringForegroundService : Service() {
     private val finalizeOutcomeUseCase = FinalizeForwardingOutcomeUseCase()
     private val retryFailedAttemptUseCase = RetryFailedAttemptUseCase()
     private val retryMutex = Mutex()
+    private val monitoringStateMutex = Mutex()
+    private var stoppedByUserRequested = false
 
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
         startForeground(NOTIFICATION_ID, buildNotification(getString(R.string.notification_service_active)))
         DebugTraceLogger.d("service_created action=foreground_start")
+        serviceScope.launch {
+            while (isActive) {
+                delay(HEARTBEAT_INTERVAL_MS)
+                persistServiceHeartbeat()
+            }
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         DebugTraceLogger.d("service_start action=${intent?.action ?: "null"} startId=$startId")
         when (intent?.action) {
+            null -> {
+                serviceScope.launch {
+                    if (shouldProcessIncomingSms()) {
+                        persistMonitoringStarted(MonitoringRecoveryTrigger.SERVICE_RECOVERY.name)
+                        processDueRetries()
+                        syncRetrySchedule()
+                        DebugTraceLogger.d("service_recovered trigger=${MonitoringRecoveryTrigger.SERVICE_RECOVERY.name}")
+                    } else {
+                        DebugTraceLogger.d("service_recovery_skipped because monitoring is disabled")
+                        stopForeground(STOP_FOREGROUND_REMOVE)
+                        stopSelf(startId)
+                    }
+                }
+            }
+
             ACTION_PROCESS_SMS -> {
                 val senderNumber = intent.getStringExtra(EXTRA_SENDER_NUMBER).orEmpty()
                 val messageBody = intent.getStringExtra(EXTRA_MESSAGE_BODY).orEmpty()
@@ -64,8 +94,11 @@ class MonitoringForegroundService : Service() {
                         if (!shouldProcessIncomingSms()) {
                             DebugTraceLogger.d("service_start ignored action=$ACTION_PROCESS_SMS because monitoring is disabled source=$source")
                             syncRetrySchedule()
+                            stopForeground(STOP_FOREGROUND_REMOVE)
+                            stopSelf(startId)
                             return@launch
                         }
+                        persistServiceHeartbeat()
                         handleIncomingSms(senderNumber, messageBody, source)
                         processDueRetries()
                         syncRetrySchedule()
@@ -87,6 +120,7 @@ class MonitoringForegroundService : Service() {
 
             ACTION_STOP_MONITORING -> {
                 DebugTraceLogger.d("service_monitoring_stop_requested")
+                stoppedByUserRequested = true
                 runBlocking(Dispatchers.IO) {
                     persistMonitoringStoppedByUser()
                 }
@@ -105,6 +139,7 @@ class MonitoringForegroundService : Service() {
                             RetryAlarmScheduler(applicationContext).cancel()
                             return@launch
                         }
+                        persistServiceHeartbeat()
                         handleRetryAttempt(attemptId)
                         syncRetrySchedule()
                     }
@@ -120,6 +155,7 @@ class MonitoringForegroundService : Service() {
                         RetryAlarmScheduler(applicationContext).cancel()
                         return@launch
                     }
+                    persistServiceHeartbeat()
                     processDueRetries()
                     syncRetrySchedule()
                 }
@@ -130,29 +166,84 @@ class MonitoringForegroundService : Service() {
 
     override fun onDestroy() {
         serviceScope.cancel()
+        if (!stoppedByUserRequested) {
+            persistRuntimeEventBlocking(MonitoringRuntimeEvent.SERVICE_DESTROYED)
+        }
         DebugTraceLogger.d("service_destroyed")
         super.onDestroy()
+    }
+
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        serviceScope.launch {
+            persistRuntimeEventIfActive(MonitoringRuntimeEvent.TASK_REMOVED)
+        }
+        DebugTraceLogger.d("service_task_removed")
+        super.onTaskRemoved(rootIntent)
+    }
+
+    override fun onTimeout(startId: Int, fgsType: Int) {
+        persistRuntimeEventBlocking(MonitoringRuntimeEvent.SERVICE_TIMEOUT)
+        DebugTraceLogger.w("service_timeout startId=$startId fgsType=$fgsType")
+        stopSelf(startId)
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
     private suspend fun persistMonitoringStarted(recoveryTriggerName: String?) {
-        val settingsRepository = (application as MySmsCodeApplication).container.settingsRepository
-        val now = System.currentTimeMillis()
-        val state = settingsRepository.getMonitoringState()
-        settingsRepository.saveMonitoringState(
-            state.markMonitoringStarted(
-                now = now,
-                recoveryTriggerName = recoveryTriggerName,
+        monitoringStateMutex.withLock {
+            val settingsRepository = (application as MySmsCodeApplication).container.settingsRepository
+            val now = System.currentTimeMillis()
+            val state = settingsRepository.getMonitoringState()
+            settingsRepository.saveMonitoringState(
+                state.markMonitoringStarted(
+                    now = now,
+                    recoveryTriggerName = recoveryTriggerName,
+                )
             )
-        )
+        }
     }
 
     private suspend fun persistMonitoringStoppedByUser() {
-        val settingsRepository = (application as MySmsCodeApplication).container.settingsRepository
-        val now = System.currentTimeMillis()
-        val state = settingsRepository.getMonitoringState()
-        settingsRepository.saveMonitoringState(state.markMonitoringStoppedByUser(now))
+        monitoringStateMutex.withLock {
+            val settingsRepository = (application as MySmsCodeApplication).container.settingsRepository
+            val now = System.currentTimeMillis()
+            val state = settingsRepository.getMonitoringState()
+            settingsRepository.saveMonitoringState(state.markMonitoringStoppedByUser(now))
+        }
+    }
+
+    private suspend fun persistServiceHeartbeat() {
+        monitoringStateMutex.withLock {
+            val settingsRepository = (application as MySmsCodeApplication).container.settingsRepository
+            val state = settingsRepository.getMonitoringState()
+            if (state.isMonitoringActive()) {
+                settingsRepository.saveMonitoringState(state.markServiceHeartbeat(System.currentTimeMillis()))
+            }
+        }
+    }
+
+    private suspend fun persistRuntimeEventIfActive(event: MonitoringRuntimeEvent) {
+        monitoringStateMutex.withLock {
+            val settingsRepository = (application as MySmsCodeApplication).container.settingsRepository
+            val state = settingsRepository.getMonitoringState()
+            if (state.isMonitoringActive()) {
+                settingsRepository.saveMonitoringState(
+                    state.markRuntimeEvent(event, System.currentTimeMillis())
+                )
+            }
+        }
+    }
+
+    private fun persistRuntimeEventBlocking(event: MonitoringRuntimeEvent) {
+        runCatching {
+            runBlocking(Dispatchers.IO) {
+                withTimeout(LIFECYCLE_EVENT_WRITE_TIMEOUT_MS) {
+                    persistRuntimeEventIfActive(event)
+                }
+            }
+        }.onFailure { error ->
+            DebugTraceLogger.w("service_runtime_event_failed event=${event.name} error=${error.javaClass.simpleName}")
+        }
     }
 
     private suspend fun shouldProcessIncomingSms(): Boolean {
@@ -326,6 +417,8 @@ class MonitoringForegroundService : Service() {
         private const val NOTIFICATION_ID = 1001
         private const val STOPPED_NOTIFICATION_ID = 1002
         private const val STOPPED_NOTIFICATION_TIMEOUT_MS = 5_000L
+        private const val HEARTBEAT_INTERVAL_MS = 5 * 60 * 1_000L
+        private const val LIFECYCLE_EVENT_WRITE_TIMEOUT_MS = 1_000L
         private const val ACTION_START_MONITORING = "com.example.mysmscode.action.START_MONITORING"
         private const val ACTION_STOP_MONITORING = "com.example.mysmscode.action.STOP_MONITORING"
         private const val ACTION_PROCESS_SMS = "com.example.mysmscode.action.PROCESS_SMS"

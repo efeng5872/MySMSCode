@@ -74,6 +74,8 @@ import com.example.mysmscode.domain.HistoryFilterOption
 import com.example.mysmscode.domain.MonitoringControlTransition
 import com.example.mysmscode.domain.MonitoringPersistenceState
 import com.example.mysmscode.domain.MonitoringRecoveryTrigger
+import com.example.mysmscode.domain.MonitoringRuntimeEvent
+import com.example.mysmscode.domain.MonitoringRuntimeHealth
 import com.example.mysmscode.domain.PermissionUiState
 import com.example.mysmscode.domain.RetryPolicyConfig
 import com.example.mysmscode.domain.RetryableAttempt
@@ -85,6 +87,7 @@ import com.example.mysmscode.domain.SimulationInjectionRequest
 import com.example.mysmscode.domain.SimulationInjectionValidation
 import com.example.mysmscode.domain.SmsRecordPreview
 import com.example.mysmscode.domain.buildMonitoringControlState
+import com.example.mysmscode.domain.buildMonitoringDiagnosticSnapshot
 import com.example.mysmscode.domain.buildMonitoringDashboard
 import com.example.mysmscode.domain.completedRetryCount
 import com.example.mysmscode.domain.canDeleteRobot
@@ -193,8 +196,11 @@ private fun ConfigurationWorkbench(container: AppContainer) {
         readMonitoringState = { withContext(Dispatchers.IO) { container.settingsRepository.getMonitoringState() } },
         readPermissionSnapshot = { readPermissionSnapshot(context) },
         readServiceRunning = { readMonitoringServiceRunning(context) },
-        startMonitoring = { MonitoringForegroundService.startMonitoring(context) },
+        startMonitoring = { trigger -> MonitoringForegroundService.startMonitoring(context, trigger) },
         stopMonitoring = { MonitoringForegroundService.stopMonitoring(context) },
+        saveMonitoringState = { state ->
+            withContext(Dispatchers.IO) { container.settingsRepository.saveMonitoringState(state) }
+        },
     )
     val simulationCoordinator = SimulationCoordinator(
         enqueueSimulation = { request ->
@@ -439,6 +445,7 @@ private fun ConfigurationWorkbench(container: AppContainer) {
                     ) {
                         DiagnosticsCard(
                             monitoringState = monitoringPersistenceState,
+                            isServiceRunning = monitoringServiceRunning,
                             latestRecord = recentRecords.firstOrNull(),
                             nextRetryAt = failedAttempts.mapNotNull { it.nextRetryAt }.minOrNull(),
                             showHeader = false,
@@ -957,10 +964,17 @@ private fun KeepaliveGuideCard(
 @Composable
 private fun DiagnosticsCard(
     monitoringState: MonitoringPersistenceState,
+    isServiceRunning: Boolean,
     latestRecord: SmsRecordPreview?,
     nextRetryAt: Long?,
     showHeader: Boolean = true,
 ) {
+    val snapshot = remember(monitoringState, isServiceRunning) {
+        buildMonitoringDiagnosticSnapshot(
+            state = monitoringState,
+            isServiceRunning = isServiceRunning,
+        )
+    }
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             if (showHeader) {
@@ -977,6 +991,37 @@ private fun DiagnosticsCard(
             )
             Text(
                 text = stringResource(
+                    R.string.diagnostics_current_health,
+                    stringResource(monitoringRuntimeHealthLabel(snapshot.health)),
+                ),
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+                color = if (snapshot.health == MonitoringRuntimeHealth.INTERRUPTED) {
+                    MaterialTheme.colorScheme.error
+                } else {
+                    MaterialTheme.colorScheme.onSurface
+                },
+            )
+            Text(
+                text = stringResource(
+                    R.string.diagnostics_last_heartbeat,
+                    snapshot.lastHeartbeatAt?.let(::formatRetryTimestamp)
+                        ?: stringResource(R.string.diagnostics_not_available),
+                ),
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            Text(
+                text = stringResource(
+                    R.string.diagnostics_last_runtime_event,
+                    snapshot.lastRuntimeEvent?.let(::monitoringRuntimeEventLabel)
+                        ?: stringResource(R.string.diagnostics_not_available),
+                    snapshot.lastRuntimeEventAt?.let(::formatRetryTimestamp)
+                        ?: stringResource(R.string.diagnostics_not_available),
+                ),
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            Text(
+                text = stringResource(
                     R.string.diagnostics_last_monitoring_started,
                     monitoringState.lastMonitoringStartedAt?.let(::formatRetryTimestamp)
                         ?: stringResource(R.string.diagnostics_not_available),
@@ -986,8 +1031,18 @@ private fun DiagnosticsCard(
             Text(
                 text = stringResource(
                     R.string.diagnostics_last_monitoring_stopped,
-                    monitoringState.lastMonitoringStoppedAt?.let(::formatRetryTimestamp)
-                        ?: stringResource(R.string.diagnostics_not_available),
+                    when {
+                        snapshot.relevantUserStoppedAt != null -> {
+                            formatRetryTimestamp(snapshot.relevantUserStoppedAt)
+                        }
+                        monitoringState.lastMonitoringStoppedAt != null -> {
+                            stringResource(
+                                R.string.diagnostics_historical_stop,
+                                formatRetryTimestamp(monitoringState.lastMonitoringStoppedAt),
+                            )
+                        }
+                        else -> stringResource(R.string.diagnostics_not_available)
+                    },
                 ),
                 style = MaterialTheme.typography.bodyMedium,
             )
@@ -1573,7 +1628,27 @@ private fun monitoringRecoveryTriggerLabel(trigger: String): String = when (trig
     MonitoringRecoveryTrigger.BOOT_COMPLETED.name -> "开机恢复"
     MonitoringRecoveryTrigger.PACKAGE_REPLACED.name -> "应用升级恢复"
     MonitoringRecoveryTrigger.SERVICE_RECOVERY.name -> "服务异常恢复"
+    MonitoringRecoveryTrigger.APP_RESUME.name -> "打开应用时检测异常并恢复"
     else -> trigger
+}
+
+private fun monitoringRuntimeHealthLabel(health: MonitoringRuntimeHealth): Int = when (health) {
+    MonitoringRuntimeHealth.RUNNING -> R.string.diagnostics_health_running
+    MonitoringRuntimeHealth.INTERRUPTED -> R.string.diagnostics_health_interrupted
+    MonitoringRuntimeHealth.STOPPED_BY_USER -> R.string.diagnostics_health_stopped_by_user
+    MonitoringRuntimeHealth.DISABLED -> R.string.diagnostics_health_disabled
+}
+
+private fun monitoringRuntimeEventLabel(event: String): String = when (event) {
+    MonitoringRuntimeEvent.STARTED.name -> "用户启动监控"
+    MonitoringRuntimeEvent.RECOVERED.name -> "监控恢复启动"
+    MonitoringRuntimeEvent.USER_STOPPED.name -> "用户主动停止"
+    MonitoringRuntimeEvent.HEARTBEAT.name -> "服务心跳"
+    MonitoringRuntimeEvent.INTERRUPTION_DETECTED.name -> "检测到异常中断"
+    MonitoringRuntimeEvent.SERVICE_DESTROYED.name -> "服务被销毁"
+    MonitoringRuntimeEvent.TASK_REMOVED.name -> "应用任务被移除"
+    MonitoringRuntimeEvent.SERVICE_TIMEOUT.name -> "前台服务超时"
+    else -> event
 }
 
 private fun SenderRule.displayName(): String = name.ifBlank { senderNumber }
