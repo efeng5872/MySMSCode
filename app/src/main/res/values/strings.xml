@@ -33,6 +33,9 @@
     <string name="notification_forward_status_failed">&#x8F6C;&#x53D1;&#x5931;&#x8D25;</string>
     <string name="notification_stopped_title">&#x76D1;&#x63A7;&#x5DF2;&#x505C;&#x6B62;</string>
     <string name="notification_stopped_message">&#x76D1;&#x63A7;&#x670D;&#x52A1;&#x5DF2;&#x505C;&#x6B62;&#x3002;</string>
+    <string name="notification_recovery_channel_name">监控恢复提醒</string>
+    <string name="notification_recovery_required_title">监控可能已中断</string>
+    <string name="notification_recovery_required_message">系统限制了后台恢复，请点击打开应用并恢复监控。</string>
     <string name="permission_card_title">&#x6743;&#x9650;&#x72B6;&#x6001;</string>
     <string name="permission_title_ready">&#x6743;&#x9650;&#x5DF2;&#x5C31;&#x7EEA;</string>
     <string name="permission_message_ready">&#x6240;&#x6709;&#x5FC5;&#x9700;&#x6743;&#x9650;&#x5747;&#x5DF2;&#x6388;&#x4E88;&#x3002;</string>
@@ -51,6 +54,9 @@
     <string name="keepalive_service_state">当前服务状态：%1$s</string>
     <string name="keepalive_battery_state">电池优化豁免：%1$s</string>
     <string name="keepalive_notification_state">通知权限状态：%1$s</string>
+    <string name="keepalive_auto_diagnostics">可自动检测：监控开关、前台服务、电池优化、通知权限、看门狗检查。</string>
+    <string name="keepalive_watchdog_state">最近一次看门狗检查：%1$s</string>
+    <string name="keepalive_manual_checks">需人工确认：应用启动管理允许自启动和后台活动、最近任务加锁、关闭省电模式。Android 不提供这些荣耀设置的可靠读取接口。</string>
     <string name="keepalive_state_enabled">已启用</string>
     <string name="keepalive_state_disabled">未启用</string>
     <string name="keepalive_state_running">运行中</string>
@@ -64,7 +70,7 @@
     <string name="keepalive_battery_dialog_title">电池设置说明</string>
     <string name="keepalive_open_battery_settings_failed">未能打开电池设置，请前往系统设置中的电池或应用启动管理手动配置。</string>
     <string name="keepalive_battery_already_optimized">当前已完成电池优化豁免，可继续检查应用启动管理、后台活动和最近任务加锁设置。</string>
-    <string name="keepalive_honor_hint">荣耀 200 Pro 建议同时检查：应用启动管理、后台活动、最近任务锁定和省电模式。</string>
+    <string name="keepalive_honor_hint">荣耀手机必须同时完成人工设置，系统页面的完成状态无法由应用伪造或自动判定。</string>
     <string name="keepalive_honor_dialog_title">荣耀 200 Pro 保活建议</string>
     <string name="keepalive_honor_dialog_message">1. 进入系统设置，搜索“应用启动管理”或“启动管理”，关闭自动管理并允许后台活动。\n2. 在系统电池优化中把本应用设置为“不允许优化”或“不受限制”。\n3. 在最近任务界面给应用加锁，避免清理后台时被结束。\n4. 保持前台通知开启，并尽量关闭省电模式或低电量模式。</string>
     <string name="diagnostics_title">保活状态诊断</string>
@@ -76,6 +82,9 @@
     <string name="diagnostics_health_disabled">尚未启用</string>
     <string name="diagnostics_last_heartbeat">最近一次服务心跳：%1$s</string>
     <string name="diagnostics_last_runtime_event">最近一次运行事件：%1$s / %2$s</string>
+    <string name="diagnostics_last_watchdog_check">最近一次看门狗检查：%1$s</string>
+    <string name="diagnostics_last_process_exit">最近一次进程退出：%1$s / %2$s</string>
+    <string name="diagnostics_last_process_exit_description">退出详情：%1$s</string>
     <string name="diagnostics_last_monitoring_started">最近一次监控启动：%1$s</string>
     <string name="diagnostics_last_monitoring_stopped">最近一次用户主动停止：%1$s</string>
     <string name="diagnostics_historical_stop">%1$s（早于本次启动，仅历史记录）</string>

@@ -71,8 +71,10 @@ class MonitoringForegroundService : Service() {
         when (intent?.action) {
             null -> {
                 serviceScope.launch {
+                    ProcessExitDiagnosticsRecorder(applicationContext).recordLatestExitIfNew()
                     if (shouldProcessIncomingSms()) {
                         persistMonitoringStarted(MonitoringRecoveryTrigger.SERVICE_RECOVERY.name)
+                        MonitoringWatchdogScheduler.schedule(applicationContext)
                         processDueRetries()
                         syncRetrySchedule()
                         DebugTraceLogger.d("service_recovered trigger=${MonitoringRecoveryTrigger.SERVICE_RECOVERY.name}")
@@ -113,6 +115,7 @@ class MonitoringForegroundService : Service() {
                 DebugTraceLogger.d("service_monitoring_requested")
                 serviceScope.launch {
                     persistMonitoringStarted(intent.getStringExtra(EXTRA_RECOVERY_TRIGGER))
+                    MonitoringWatchdogScheduler.schedule(applicationContext)
                     processDueRetries()
                     syncRetrySchedule()
                 }
@@ -125,6 +128,7 @@ class MonitoringForegroundService : Service() {
                     persistMonitoringStoppedByUser()
                 }
                 RetryAlarmScheduler(applicationContext).cancel()
+                MonitoringWatchdogScheduler.cancel(applicationContext)
                 stopForeground(STOP_FOREGROUND_REMOVE)
                 showStoppedNotification()
                 stopSelf()

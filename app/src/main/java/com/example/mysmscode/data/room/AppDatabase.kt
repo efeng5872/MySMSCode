@@ -84,6 +84,51 @@ interface MonitoringStateDao {
 
     @Query("SELECT * FROM monitoring_state WHERE id = 1 LIMIT 1")
     suspend fun get(): MonitoringStateEntity?
+
+    @Query("UPDATE monitoring_state SET last_watchdog_check_at = :checkedAt WHERE id = 1")
+    suspend fun updateWatchdogCheckAt(checkedAt: Long): Int
+
+    @Query(
+        """
+        UPDATE monitoring_state
+        SET last_process_exit_at = :timestamp,
+            last_process_exit_reason = :reason,
+            last_process_exit_description = :description
+        WHERE id = 1
+          AND (last_process_exit_at IS NULL OR last_process_exit_at < :timestamp)
+        """
+    )
+    suspend fun updateProcessExitIfNew(
+        timestamp: Long,
+        reason: String,
+        description: String?,
+    ): Int
+
+    @Transaction
+    suspend fun recordProcessExitIfNew(
+        timestamp: Long,
+        reason: String,
+        description: String?,
+    ): Boolean {
+        val current = get()
+        if (current == null) {
+            save(
+                MonitoringStateEntity(
+                    monitoringEnabled = false,
+                    stoppedByUser = false,
+                    lastMonitoringStartedAt = null,
+                    lastMonitoringStoppedAt = null,
+                    lastRecoveryStartedAt = null,
+                    lastRecoveryTrigger = null,
+                    lastProcessExitAt = timestamp,
+                    lastProcessExitReason = reason,
+                    lastProcessExitDescription = description,
+                )
+            )
+            return true
+        }
+        return updateProcessExitIfNew(timestamp, reason, description) > 0
+    }
 }
 
 @Dao
@@ -243,7 +288,7 @@ interface ProcessingDao {
         SmsRecordEntity::class,
         ForwardAttemptEntity::class,
     ],
-    version = 8,
+    version = 9,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {

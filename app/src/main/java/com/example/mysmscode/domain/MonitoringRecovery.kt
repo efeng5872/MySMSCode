@@ -5,6 +5,7 @@ enum class MonitoringRecoveryTrigger {
     PACKAGE_REPLACED,
     SERVICE_RECOVERY,
     APP_RESUME,
+    WATCHDOG,
 }
 
 enum class MonitoringRuntimeEvent {
@@ -16,6 +17,8 @@ enum class MonitoringRuntimeEvent {
     SERVICE_DESTROYED,
     TASK_REMOVED,
     SERVICE_TIMEOUT,
+    WATCHDOG_STALE,
+    WATCHDOG_RECOVERY_BLOCKED,
 }
 
 enum class MonitoringRuntimeHealth {
@@ -35,6 +38,10 @@ data class MonitoringPersistenceState(
     val lastServiceHeartbeatAt: Long? = null,
     val lastRuntimeEventAt: Long? = null,
     val lastRuntimeEvent: String? = null,
+    val lastWatchdogCheckAt: Long? = null,
+    val lastProcessExitAt: Long? = null,
+    val lastProcessExitReason: String? = null,
+    val lastProcessExitDescription: String? = null,
 )
 
 data class MonitoringDiagnosticSnapshot(
@@ -133,6 +140,7 @@ fun shouldRecoverMonitoring(
         MonitoringRecoveryTrigger.PACKAGE_REPLACED,
         MonitoringRecoveryTrigger.SERVICE_RECOVERY,
         MonitoringRecoveryTrigger.APP_RESUME,
+        MonitoringRecoveryTrigger.WATCHDOG,
         -> true
     }
 }

@@ -5,6 +5,7 @@ import android.content.Intent
 import android.os.SystemClock
 import android.app.ActivityManager
 import androidx.room.Room
+import androidx.work.WorkManager
 import com.example.mysmscode.data.AppDatabase
 import com.example.mysmscode.data.PassthroughWebhookCipher
 import com.example.mysmscode.data.RepositorySaveResult
@@ -73,6 +74,10 @@ internal class AndroidTestHarness(
 ) {
     fun close() {
         RetryAlarmScheduler(appContext).cancel()
+        WorkManager.getInstance(appContext)
+            .cancelUniqueWork(MonitoringWatchdogScheduler.UNIQUE_WORK_NAME)
+            .result
+            .get()
         appContext.stopService(Intent(appContext, MonitoringForegroundService::class.java))
         waitForServiceShutdown(appContext)
         application.containerOverride = null

@@ -39,6 +39,7 @@ class MonitoringRecoveryReceiver : BroadcastReceiver() {
         }
         CoroutineScope(Dispatchers.IO).launch {
             try {
+                ProcessExitDiagnosticsRecorder(context.applicationContext).recordLatestExitIfNew()
                 val settingsRepository = (context.applicationContext as MySmsCodeApplication).container.settingsRepository
                 val state = settingsRepository.getMonitoringState()
                 if (shouldRecoverMonitoring(state, trigger)) {

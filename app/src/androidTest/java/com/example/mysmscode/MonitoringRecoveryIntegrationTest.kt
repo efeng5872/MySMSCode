@@ -4,6 +4,8 @@ import android.content.Intent
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.core.content.ContextCompat
+import androidx.work.WorkInfo
+import androidx.work.WorkManager
 import com.example.mysmscode.domain.MonitoringPersistenceState
 import com.example.mysmscode.domain.MonitoringRecoveryTrigger
 import kotlinx.coroutines.runBlocking
@@ -47,6 +49,27 @@ class MonitoringRecoveryIntegrationTest {
         waitUntil("停止监控后应持久化 stoppedByUser=true") {
             val state = runBlocking { harness.container.settingsRepository.getMonitoringState() }
             state.stoppedByUser && !state.monitoringEnabled && state.lastMonitoringStoppedAt != null
+        }
+    }
+
+    @Test
+    fun monitoringLifecycle_schedulesAndCancelsWatchdog() {
+        MonitoringForegroundService.startMonitoring(harness.appContext)
+
+        waitUntil("启动监控后应创建唯一看门狗任务") {
+            WorkManager.getInstance(harness.appContext)
+                .getWorkInfosForUniqueWork(MonitoringWatchdogScheduler.UNIQUE_WORK_NAME)
+                .get()
+                .any { it.state == WorkInfo.State.ENQUEUED || it.state == WorkInfo.State.RUNNING }
+        }
+
+        MonitoringForegroundService.stopMonitoring(harness.appContext)
+
+        waitUntil("停止监控后应取消看门狗任务") {
+            val workInfos = WorkManager.getInstance(harness.appContext)
+                .getWorkInfosForUniqueWork(MonitoringWatchdogScheduler.UNIQUE_WORK_NAME)
+                .get()
+            workInfos.isNotEmpty() && workInfos.all { it.state == WorkInfo.State.CANCELLED }
         }
     }
 

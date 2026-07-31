@@ -85,4 +85,38 @@ class MonitoringDiagnosticsTest {
         assertEquals(MonitoringRecoveryTrigger.SERVICE_RECOVERY.name, started.lastRecoveryTrigger)
         assertEquals(MonitoringRuntimeEvent.STARTED.name, started.lastRuntimeEvent)
     }
+
+    @Test
+    fun `new process exit observation is stored`() {
+        val updated = MonitoringPersistenceState().recordProcessExit(
+            ProcessExitObservation(
+                timestamp = 4_000L,
+                reason = ProcessExitReason.LOW_MEMORY,
+                description = "系统内存压力",
+            )
+        )
+
+        assertEquals(4_000L, updated.lastProcessExitAt)
+        assertEquals(ProcessExitReason.LOW_MEMORY.name, updated.lastProcessExitReason)
+        assertEquals("系统内存压力", updated.lastProcessExitDescription)
+    }
+
+    @Test
+    fun `older process exit observation does not replace current diagnosis`() {
+        val state = MonitoringPersistenceState(
+            lastProcessExitAt = 4_000L,
+            lastProcessExitReason = ProcessExitReason.LOW_MEMORY.name,
+            lastProcessExitDescription = "系统内存压力",
+        )
+
+        val unchanged = state.recordProcessExit(
+            ProcessExitObservation(
+                timestamp = 3_000L,
+                reason = ProcessExitReason.USER_REQUESTED,
+                description = "旧记录",
+            )
+        )
+
+        assertEquals(state, unchanged)
+    }
 }

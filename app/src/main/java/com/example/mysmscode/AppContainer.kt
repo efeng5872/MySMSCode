@@ -81,12 +81,21 @@ class AppContainer(
         }
     }
 
+    private val migration8To9 = object : Migration(8, 9) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("ALTER TABLE monitoring_state ADD COLUMN last_watchdog_check_at INTEGER")
+            db.execSQL("ALTER TABLE monitoring_state ADD COLUMN last_process_exit_at INTEGER")
+            db.execSQL("ALTER TABLE monitoring_state ADD COLUMN last_process_exit_reason TEXT")
+            db.execSQL("ALTER TABLE monitoring_state ADD COLUMN last_process_exit_description TEXT")
+        }
+    }
+
     val database: AppDatabase by lazy {
         databaseOverride ?: Room.databaseBuilder(
             application,
             AppDatabase::class.java,
             "mysmscode.db"
-        ).addMigrations(migration4To5, migration5To6, migration6To7, migration7To8)
+        ).addMigrations(migration4To5, migration5To6, migration6To7, migration7To8, migration8To9)
             .fallbackToDestructiveMigration(false)
             .build()
     }

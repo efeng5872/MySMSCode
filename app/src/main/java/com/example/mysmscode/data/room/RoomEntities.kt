@@ -148,6 +148,14 @@ data class MonitoringStateEntity(
     val lastRuntimeEventAt: Long? = null,
     @ColumnInfo(name = "last_runtime_event")
     val lastRuntimeEvent: String? = null,
+    @ColumnInfo(name = "last_watchdog_check_at")
+    val lastWatchdogCheckAt: Long? = null,
+    @ColumnInfo(name = "last_process_exit_at")
+    val lastProcessExitAt: Long? = null,
+    @ColumnInfo(name = "last_process_exit_reason")
+    val lastProcessExitReason: String? = null,
+    @ColumnInfo(name = "last_process_exit_description")
+    val lastProcessExitDescription: String? = null,
 ) {
     fun toDomain(): MonitoringPersistenceState = MonitoringPersistenceState(
         monitoringEnabled = monitoringEnabled,
@@ -159,6 +167,10 @@ data class MonitoringStateEntity(
         lastServiceHeartbeatAt = lastServiceHeartbeatAt,
         lastRuntimeEventAt = lastRuntimeEventAt,
         lastRuntimeEvent = lastRuntimeEvent,
+        lastWatchdogCheckAt = lastWatchdogCheckAt,
+        lastProcessExitAt = lastProcessExitAt,
+        lastProcessExitReason = lastProcessExitReason,
+        lastProcessExitDescription = lastProcessExitDescription,
     )
 
     companion object {
@@ -172,6 +184,10 @@ data class MonitoringStateEntity(
             lastServiceHeartbeatAt = domain.lastServiceHeartbeatAt,
             lastRuntimeEventAt = domain.lastRuntimeEventAt,
             lastRuntimeEvent = domain.lastRuntimeEvent,
+            lastWatchdogCheckAt = domain.lastWatchdogCheckAt,
+            lastProcessExitAt = domain.lastProcessExitAt,
+            lastProcessExitReason = domain.lastProcessExitReason,
+            lastProcessExitDescription = domain.lastProcessExitDescription,
         )
     }
 }

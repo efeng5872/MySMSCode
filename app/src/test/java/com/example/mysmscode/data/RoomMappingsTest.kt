@@ -110,6 +110,10 @@ class RoomMappingsTest {
             lastServiceHeartbeatAt = 110L,
             lastRuntimeEventAt = 105L,
             lastRuntimeEvent = MonitoringRuntimeEvent.RECOVERED.name,
+            lastWatchdogCheckAt = 120L,
+            lastProcessExitAt = 115L,
+            lastProcessExitReason = "LOW_MEMORY",
+            lastProcessExitDescription = "系统内存压力",
         )
 
         val restored = MonitoringStateEntity.fromDomain(domain).toDomain()

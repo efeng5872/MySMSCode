@@ -77,6 +77,7 @@ import com.example.mysmscode.domain.MonitoringRecoveryTrigger
 import com.example.mysmscode.domain.MonitoringRuntimeEvent
 import com.example.mysmscode.domain.MonitoringRuntimeHealth
 import com.example.mysmscode.domain.PermissionUiState
+import com.example.mysmscode.domain.ProcessExitReason
 import com.example.mysmscode.domain.RetryPolicyConfig
 import com.example.mysmscode.domain.RetryableAttempt
 import com.example.mysmscode.domain.RobotEndpoint
@@ -220,6 +221,9 @@ private fun ConfigurationWorkbench(container: AppContainer) {
 
     suspend fun refreshRuntimeState() {
         isLoading = true
+        withContext(Dispatchers.IO) {
+            ProcessExitDiagnosticsRecorder(context.applicationContext).recordLatestExitIfNew()
+        }
         val result = monitoringCoordinator.refreshRuntimeState(
             currentMessage = statusMessage,
             transition = monitoringTransition,
@@ -899,6 +903,24 @@ private fun KeepaliveGuideCard(
                 style = MaterialTheme.typography.bodyMedium,
             )
             Text(
+                text = stringResource(R.string.keepalive_auto_diagnostics),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Text(
+                text = stringResource(
+                    R.string.keepalive_watchdog_state,
+                    monitoringState.lastWatchdogCheckAt?.let(::formatRetryTimestamp)
+                        ?: stringResource(R.string.diagnostics_not_available),
+                ),
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            Text(
+                text = stringResource(R.string.keepalive_manual_checks),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error,
+            )
+            Text(
                 text = stringResource(R.string.keepalive_honor_hint),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -1020,6 +1042,31 @@ private fun DiagnosticsCard(
                 ),
                 style = MaterialTheme.typography.bodyMedium,
             )
+            Text(
+                text = stringResource(
+                    R.string.diagnostics_last_watchdog_check,
+                    monitoringState.lastWatchdogCheckAt?.let(::formatRetryTimestamp)
+                        ?: stringResource(R.string.diagnostics_not_available),
+                ),
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            Text(
+                text = stringResource(
+                    R.string.diagnostics_last_process_exit,
+                    monitoringState.lastProcessExitReason?.let(::processExitReasonLabel)
+                        ?: stringResource(R.string.diagnostics_not_available),
+                    monitoringState.lastProcessExitAt?.let(::formatRetryTimestamp)
+                        ?: stringResource(R.string.diagnostics_not_available),
+                ),
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            monitoringState.lastProcessExitDescription?.let { description ->
+                Text(
+                    text = stringResource(R.string.diagnostics_last_process_exit_description, description),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
             Text(
                 text = stringResource(
                     R.string.diagnostics_last_monitoring_started,
@@ -1629,6 +1676,7 @@ private fun monitoringRecoveryTriggerLabel(trigger: String): String = when (trig
     MonitoringRecoveryTrigger.PACKAGE_REPLACED.name -> "应用升级恢复"
     MonitoringRecoveryTrigger.SERVICE_RECOVERY.name -> "服务异常恢复"
     MonitoringRecoveryTrigger.APP_RESUME.name -> "打开应用时检测异常并恢复"
+    MonitoringRecoveryTrigger.WATCHDOG.name -> "看门狗检测超时并恢复"
     else -> trigger
 }
 
@@ -1648,7 +1696,30 @@ private fun monitoringRuntimeEventLabel(event: String): String = when (event) {
     MonitoringRuntimeEvent.SERVICE_DESTROYED.name -> "服务被销毁"
     MonitoringRuntimeEvent.TASK_REMOVED.name -> "应用任务被移除"
     MonitoringRuntimeEvent.SERVICE_TIMEOUT.name -> "前台服务超时"
+    MonitoringRuntimeEvent.WATCHDOG_STALE.name -> "看门狗检测到心跳超时"
+    MonitoringRuntimeEvent.WATCHDOG_RECOVERY_BLOCKED.name -> "系统限制后台恢复，等待用户打开应用"
     else -> event
+}
+
+private fun processExitReasonLabel(reason: String): String = when (reason) {
+    ProcessExitReason.EXIT_SELF.name -> "应用自行退出"
+    ProcessExitReason.SIGNALED.name -> "系统信号终止"
+    ProcessExitReason.LOW_MEMORY.name -> "系统内存不足"
+    ProcessExitReason.CRASH.name -> "Java/Kotlin 崩溃"
+    ProcessExitReason.CRASH_NATIVE.name -> "Native 崩溃"
+    ProcessExitReason.ANR.name -> "应用无响应"
+    ProcessExitReason.INITIALIZATION_FAILURE.name -> "初始化失败"
+    ProcessExitReason.PERMISSION_CHANGE.name -> "权限变化"
+    ProcessExitReason.EXCESSIVE_RESOURCE_USAGE.name -> "资源使用过量"
+    ProcessExitReason.USER_REQUESTED.name -> "用户或系统请求停止"
+    ProcessExitReason.USER_STOPPED.name -> "用户强行停止"
+    ProcessExitReason.DEPENDENCY_DIED.name -> "依赖进程退出"
+    ProcessExitReason.FREEZER.name -> "系统冻结进程"
+    ProcessExitReason.PACKAGE_STATE_CHANGE.name -> "应用状态变化"
+    ProcessExitReason.PACKAGE_UPDATED.name -> "应用升级"
+    ProcessExitReason.OTHER.name -> "其他原因"
+    ProcessExitReason.UNKNOWN.name -> "未知原因"
+    else -> reason
 }
 
 private fun SenderRule.displayName(): String = name.ifBlank { senderNumber }
