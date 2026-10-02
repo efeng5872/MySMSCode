@@ -1,5 +1,7 @@
 # Findings
 
+> 接续说明（2026-10-02）：本文件是历史调查记录，早期模板和测试覆盖描述已被后续实现取代。当前事实见 [项目概览](docs/项目概览.md)，进度见 [PROJECT_STATUS.md](PROJECT_STATUS.md)。
+
 ## Project State
 - Project root contains a standard Android Studio app template.
 - `app/src/main/java/com/example/mysmscode/MainActivity.kt` still renders the default "Hello Android!" Compose screen.

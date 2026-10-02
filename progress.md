@@ -1,5 +1,7 @@
 # Progress Log
 
+> 接续说明（2026-10-02）：本文件保存历史过程与验证记录，不代表当前版本已通过验证。当前状态及下一步见 [PROJECT_STATUS.md](PROJECT_STATUS.md)，资料导航见 [知识库](docs/README.md)。
+
 ## 2026-03-14
 - Read project structure and confirmed current app is still the default Android template.
 - Loaded `brainstorming`, `planning-with-files`, and `test-driven-development` skill instructions.

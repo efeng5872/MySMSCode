@@ -1,5 +1,7 @@
 # Task Plan
 
+> 接续说明（2026-10-02）：本文件保留历史计划，早期状态可能已过时。当前任务与下一步统一见 [PROJECT_STATUS.md](PROJECT_STATUS.md)，资料入口见 [知识库](docs/README.md)。
+
 ## Goal
 Build an Android app that monitors incoming SMS messages from configured sender numbers, matches configured keywords, and forwards matched content to Feishu and WeCom group robots. Follow a software engineering workflow: requirements, design, testing, implementation, and verification.
 
