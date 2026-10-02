@@ -20,6 +20,7 @@
 | [初始技术设计](2026-03-15-sms-forwarding-design.md) | 初始方案及历史依据 | 按新设计引用或明确替代 |
 | [保活优化设计](2026-04-18-keepalive-optimization-design.md) | 恢复、调度、引导和诊断方案 | 对应方案变化时 |
 | [保活重设计复核](2026-10-02-keepalive-redesign-review.md) | 待议方案的风险、修订建议与验收场景 | 方案进一步明确时；不代表已批准实施 |
+| [保活恢复第一阶段需求](2026-10-02-keepalive-recovery-requirements.md) | 已确认方向对应的功能、边界和验收标准 | 当前 v0.1 待首次确认；阶段状态以当前状态文件为准 |
 | [测试计划](2026-03-15-sms-forwarding-test-plan.md) | 用例与验收范围 | 需求或风险变化时 |
 | [阶段一报告](2026-03-15-sms-forwarding-test-report-phase1.md)、[阶段二报告](2026-03-15-sms-forwarding-test-report-phase2.md) | 历史验证结论与适用环境 | 新验证优先新增有日期、版本的报告 |
 | [人工检查清单](2026-03-15-sms-forwarding-manual-walkthrough-checklist.md) | 历史人工验证步骤 | 使用前核对当前代码和项目规则 |
