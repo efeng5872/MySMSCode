@@ -50,3 +50,10 @@
 - 后续约束：
   - 过滤执行 Gradle 测试时直接使用已授权命令前缀，不先在隔离环境重复尝试
   - 只有进入实际 Gradle 测试任务后的失败才计入项目测试结果
+
+## 2026-10-02：GitHub 推送连接重置
+
+- 现象：向 `origin/master` 推送文档记录时，两次出现 `Recv failure: Connection was reset`，而远端读取可成功。
+- 原因：未确定具体网络根因；不能仅凭现象确认是 HTTP/2 或代理问题。
+- 已验证的处理：`git -c http.version=HTTP/1.1 push origin master` 成功；随后 `git ls-remote origin refs/heads/master` 与本地提交一致。
+- 复发检查：先确认远端与网络状态，再尝试命令级 HTTP/1.1 参数；无需修改全局配置，禁止因传输失败强制推送。
